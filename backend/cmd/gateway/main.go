@@ -57,10 +57,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Redis initialization
+	redisCache, err := db.RedisSetup(*cfg)
+	if err != nil {
+		slog.Error("failed to setup redis", "err", err)
+		os.Exit(1)
+	}
+
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
-		Handler: proxy.NewRouter(cfg, database),
+		Handler: proxy.NewRouter(cfg, database, redisCache),
 		// Long write timeout to accommodate streaming LLM responses
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,

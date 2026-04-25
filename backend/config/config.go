@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -11,6 +12,7 @@ type Config struct {
 	ProxyPort int
 	AdminPort int
 	Telemetry TelemetryConfig
+	Auth      APIKeyConfig
 	Redis     RedisConfig
 	Postgres  PostgresConfig
 	Upstreams []UpstreamConfig
@@ -34,6 +36,10 @@ type RedisConfig struct {
 	Addr string
 }
 
+type APIKeyConfig struct {
+	CacheTTL time.Duration
+}
+
 type PostgresConfig struct {
 	DSN string
 }
@@ -46,6 +52,9 @@ func Load() (*Config, error) {
 		Telemetry: TelemetryConfig{
 			CollectorAddr: env("OTEL_COLLECTOR_ADDR", "localhost:4317"),
 			ServiceName:   env("OTEL_SERVICE_NAME", "ai-gateway"),
+		},
+		Auth: APIKeyConfig{
+			CacheTTL: time.Duration(intEnv("API_KEY_CACHE_TTL_SEC", 300)) * time.Second,
 		},
 		Redis: RedisConfig{
 			Addr: env("REDIS_ADDR", "localhost:6379"),

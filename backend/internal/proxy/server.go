@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"gorm.io/gorm"
 
@@ -22,13 +24,17 @@ type Server struct {
 	router     *llmrouter.Router
 	httpClient *http.Client
 	db         *gorm.DB
+	redis      *redis.Client
+	authTTL    time.Duration
 }
 
 // NewRouter builds the OpenAI-compatible proxy HTTP handler.
-func NewRouter(cfg *config.Config, database *gorm.DB) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client) http.Handler {
 	srv := &Server{
-		router: llmrouter.New(cfg.Upstreams),
-		db:     database,
+		router:  llmrouter.New(cfg.Upstreams),
+		db:      database,
+		redis:   redisCache,
+		authTTL: cfg.Auth.CacheTTL,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 20,
@@ -73,12 +79,33 @@ func (s *Server) Authenticate(next http.Handler) http.Handler {
 		key := parts[1]
 		hash := auth.HashKey(key)
 
+		// 1. Try cache first
+		cacheKey := fmt.Sprintf("auth:key:%s", hash)
 		var apiKey db.APIKey
+
+		if s.redis != nil {
+			val, err := s.redis.Get(r.Context(), cacheKey).Result()
+			if err == nil {
+				if err := json.Unmarshal([]byte(val), &apiKey); err == nil {
+					goto authorized
+				}
+			}
+		}
+
+		// 2. Fallback to DB
 		if err := s.db.Where("key_hash = ? AND is_active = ?", hash, true).First(&apiKey).Error; err != nil {
 			writeError(w, http.StatusUnauthorized, "invalid or inactive api key", "invalid_request_error")
 			return
 		}
 
+		// 3. Populate cache
+		if s.redis != nil {
+			if apiKeyJSON, err := json.Marshal(apiKey); err == nil {
+				s.redis.Set(r.Context(), cacheKey, apiKeyJSON, s.authTTL)
+			}
+		}
+
+	authorized:
 		// Update last used at
 		now := time.Now()
 		s.db.Model(&apiKey).Update("last_used_at", &now)

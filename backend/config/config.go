@@ -38,7 +38,7 @@ func Load() (*Config, error) {
 			Addr: env("REDIS_ADDR", "localhost:6379"),
 		},
 		Postgres: PostgresConfig{
-			DSN: env("POSTGRES_DSN", "postgres://gateway:gateway@localhost:5432/gateway?sslmode=disable"),
+			DSN: env("POSTGRES_DSN", "postgres://gateway:gateway@localhost:6432/gateway?sslmode=disable"),
 		},
 	}, nil
 }

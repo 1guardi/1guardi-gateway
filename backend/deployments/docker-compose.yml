@@ -45,9 +45,9 @@ services:
       POSTGRES_PASSWORD: gateway
       POSTGRES_DB: gateway
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     ports:
-      - "5432:5432"   # exposed for local tooling (psql, Postico, etc.)
+      - "6432:5432"   # exposed for local tooling (psql, Postico, etc.)
     deploy:
       resources:
         limits:
@@ -109,7 +109,7 @@ services:
 
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
   jaeger:
-    image: jaegertracing/all-in-one:2.17
+    image: jaegertracing/all-in-one:latest
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:

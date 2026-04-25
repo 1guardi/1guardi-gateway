@@ -2,15 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { STATUS_STYLES, CIRCUIT_STYLES } from '@/lib/styles.ts'
 import { traces, endpoints, costData } from '../data/mock.ts'
-
-const STATUS_COLORS: Record<string, string> = {
-  OK: 'text-primary border-primary/30 bg-primary/8',
-  GUARDRAIL: 'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  'PII MASKED': 'text-violet-400 border-violet-400/30 bg-violet-400/8',
-  FALLBACK: 'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  ERROR: 'text-red-400 border-red-400/30 bg-red-400/8',
-}
 
 const W = 460, H = 72
 const pts = costData.map((v, i) => [i * (W / (costData.length - 1)), (1 - v) * H] as [number, number])
@@ -107,20 +100,15 @@ export default function Overview() {
             <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">CIRCUIT BREAKERS</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {endpoints.map((ep) => {
-              const color = ep.circuitState === 'CLOSED' ? 'text-green-400 border-green-400/20 bg-green-400/6'
-                : ep.circuitState === 'OPEN' ? 'text-red-400 border-red-400/20 bg-red-400/6'
-                : 'text-amber-400 border-amber-400/20 bg-amber-400/6'
-              return (
-                <div key={ep.id} className="flex items-center justify-between rounded-md px-3 py-2 bg-background/60 border border-border">
-                  <div>
-                    <p className="text-xs font-mono font-bold text-foreground">{ep.label}</p>
-                    <p className="text-[10px] font-mono text-muted-foreground/40">p99 · {ep.ttftP99}</p>
-                  </div>
-                  <Badge variant="outline" className={`font-mono text-[10px] ${color}`}>{ep.circuitState}</Badge>
+            {endpoints.map((ep) => (
+              <div key={ep.id} className="flex items-center justify-between rounded-md px-3 py-2 bg-background/60 border border-border">
+                <div>
+                  <p className="text-xs font-mono font-bold text-foreground">{ep.label}</p>
+                  <p className="text-[10px] font-mono text-muted-foreground/40">p99 · {ep.ttftP99}</p>
                 </div>
-              )
-            })}
+                <Badge variant="outline" className={`font-mono text-[10px] ${CIRCUIT_STYLES[ep.circuitState]}`}>{ep.circuitState}</Badge>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
@@ -153,7 +141,7 @@ export default function Overview() {
                     <TableCell className="font-mono text-xs text-muted-foreground">{t.cost}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{t.ttft}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`font-mono text-[10px] ${STATUS_COLORS[t.status]}`}>{t.status}</Badge>
+                      <Badge variant="outline" className={`font-mono text-[10px] ${STATUS_STYLES[t.status]}`}>{t.status}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}

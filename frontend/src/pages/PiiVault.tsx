@@ -3,17 +3,8 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { PII_TYPE_STYLES } from '@/lib/styles.ts'
 import { piiEntries } from '../data/mock.ts'
-
-const TYPE_STYLES: Record<string, string> = {
-  EMAIL:         'text-primary border-primary/30 bg-primary/8',
-  PHONE:         'text-violet-400 border-violet-400/30 bg-violet-400/8',
-  FULL_NAME:     'text-green-400 border-green-400/30 bg-green-400/8',
-  SSN:           'text-red-400 border-red-400/30 bg-red-400/8',
-  BANK_ACCT:     'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  ADDRESS:       'text-blue-400 border-blue-400/30 bg-blue-400/8',
-  DATE_OF_BIRTH: 'text-pink-400 border-pink-400/30 bg-pink-400/8',
-}
 
 const typeCounts = piiEntries.reduce<Record<string, number>>((acc, e) => {
   acc[e.type] = (acc[e.type] ?? 0) + 1
@@ -62,7 +53,7 @@ export default function PiiVault() {
               return (
                 <div key={type}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <Badge variant="outline" className={`font-mono text-[9px] ${TYPE_STYLES[type] ?? ''}`}>{type}</Badge>
+                    <Badge variant="outline" className={`font-mono text-[9px] ${PII_TYPE_STYLES[type] ?? ''}`}>{type}</Badge>
                     <span className="font-mono text-xs text-muted-foreground">{count} · {pct}%</span>
                   </div>
                   <Progress value={pct} className="h-1.5" />
@@ -97,7 +88,7 @@ export default function PiiVault() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={`font-mono text-[10px] ${TYPE_STYLES[e.type] ?? ''}`}>{e.type}</Badge>
+                      <Badge variant="outline" className={`font-mono text-[10px] ${PII_TYPE_STYLES[e.type] ?? ''}`}>{e.type}</Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{e.agent}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{e.maskedAt}</TableCell>

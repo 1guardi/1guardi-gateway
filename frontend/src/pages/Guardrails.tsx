@@ -5,16 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ACTION_STYLES } from '@/lib/styles.ts'
 import { guardrailRules } from '../data/mock.ts'
 import type { GuardrailRule } from '../data/mock.ts'
-
-const ACTION_STYLES: Record<string, string> = {
-  block:   'text-red-400 border-red-400/30 bg-red-400/8',
-  rewrite: 'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  tag:     'text-primary border-primary/30 bg-primary/8',
-  log:     'text-muted-foreground border-border bg-muted/40',
-  shadow:  'text-violet-400 border-violet-400/30 bg-violet-400/8',
-}
 
 function RuleRow({ rule, active, onToggle, onClick }: {
   rule: GuardrailRule

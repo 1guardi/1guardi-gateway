@@ -6,16 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { STATUS_STYLES } from '@/lib/styles.ts'
 import { traces } from '../data/mock.ts'
 import type { Trace } from '../data/mock.ts'
-
-const STATUS_STYLES: Record<string, string> = {
-  OK:           'text-primary border-primary/30 bg-primary/8',
-  GUARDRAIL:    'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  'PII MASKED': 'text-violet-400 border-violet-400/30 bg-violet-400/8',
-  FALLBACK:     'text-amber-400 border-amber-400/30 bg-amber-400/8',
-  ERROR:        'text-red-400 border-red-400/30 bg-red-400/8',
-}
 
 const ALL_STATUSES = ['OK', 'GUARDRAIL', 'PII MASKED', 'FALLBACK', 'ERROR']
 const ALL_MODELS   = ['gpt-4o', 'claude-3.5', 'gemini-pro']

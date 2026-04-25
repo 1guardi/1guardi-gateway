@@ -2,17 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { CIRCUIT_STYLES, scoreColor, quotaColor } from '@/lib/styles.ts'
 import { endpoints } from '../data/mock.ts'
-
-const CIRCUIT_STYLES: Record<string, string> = {
-  CLOSED:      'text-green-400 border-green-400/30 bg-green-400/8',
-  OPEN:        'text-red-400 border-red-400/30 bg-red-400/8',
-  'HALF-OPEN': 'text-amber-400 border-amber-400/30 bg-amber-400/8',
-}
-
-function scoreColor(score: number) {
-  return score > 0.8 ? 'text-green-400' : score > 0.6 ? 'text-amber-400' : 'text-red-400'
-}
 
 export default function Router() {
   return (
@@ -85,7 +76,7 @@ export default function Router() {
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="font-mono text-[9px] text-muted-foreground/40">QUOTA CONSUMPTION</span>
-                    <span className={`font-mono text-[9px] font-bold ${ep.quotaUsed > 80 ? 'text-red-400' : ep.quotaUsed > 60 ? 'text-amber-400' : 'text-green-400'}`}>
+                    <span className={`font-mono text-[9px] font-bold ${quotaColor(ep.quotaUsed)}`}>
                       {ep.quotaUsed}%
                     </span>
                   </div>

@@ -1,0 +1,7 @@
+ai-gateway-landing/
+deployments/
+*.md
+.env
+.env.*
+.git
+.gitignore

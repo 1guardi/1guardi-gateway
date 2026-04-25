@@ -15,6 +15,7 @@ import (
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/admin"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/proxy"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/telemetry"
 )
@@ -49,6 +50,13 @@ func main() {
 		}
 	}()
 
+	// Database initialization
+	database, err := db.Setup(*cfg)
+	if err != nil {
+		slog.Error("failed to setup database", "err", err)
+		os.Exit(1)
+	}
+
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
@@ -60,7 +68,7 @@ func main() {
 	}
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.NewRouter(cfg),
+		Handler:      admin.NewRouter(cfg, database),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

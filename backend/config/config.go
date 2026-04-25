@@ -7,6 +7,7 @@ import (
 )
 
 type Config struct {
+	Env       string
 	ProxyPort int
 	AdminPort int
 	Telemetry TelemetryConfig
@@ -39,6 +40,7 @@ type PostgresConfig struct {
 
 func Load() (*Config, error) {
 	return &Config{
+		Env:       env("ENV", "prod"),
 		ProxyPort: intEnv("PROXY_PORT", 8080),
 		AdminPort: intEnv("ADMIN_PORT", 8081),
 		Telemetry: TelemetryConfig{

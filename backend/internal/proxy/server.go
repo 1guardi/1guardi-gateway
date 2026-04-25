@@ -8,26 +8,40 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
+	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 )
 
-// NewRouter builds the OpenAI-compatible proxy HTTP handler.
-// This is the hot path — keep middleware lean.
-func NewRouter(cfg *config.Config) http.Handler {
-	r := chi.NewRouter()
+// Server holds shared dependencies for the proxy hot path.
+type Server struct {
+	router     *llmrouter.Router
+	httpClient *http.Client
+}
 
+// NewRouter builds the OpenAI-compatible proxy HTTP handler.
+func NewRouter(cfg *config.Config) http.Handler {
+	srv := &Server{
+		router: llmrouter.New(cfg.Upstreams),
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 20,
+			},
+			// No hard timeout — streaming responses can be long.
+			// Callers control deadline via request context.
+		},
+	}
+
+	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(extractTenantContext)
 
 	// OpenAI-compatible surface
-	r.Post("/v1/chat/completions", handleChatCompletions)
+	r.Post("/v1/chat/completions", srv.handleChatCompletions)
 	r.Post("/v1/completions", handleCompletions)
 	r.Post("/v1/embeddings", handleEmbeddings)
 	r.Get("/v1/models", handleListModels)
 
-	// Wrap the whole router so every route gets an OTel span automatically.
-	// The span name is set per-route via otelhttp.WithRouteTag in each handler.
 	return otelhttp.NewHandler(r, "proxy",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 	)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -11,6 +12,16 @@ type Config struct {
 	Telemetry TelemetryConfig
 	Redis     RedisConfig
 	Postgres  PostgresConfig
+	Upstreams []UpstreamConfig
+}
+
+// UpstreamConfig describes one LLM endpoint the gateway can route to.
+// Multiple entries with the same Model enable fallback routing.
+type UpstreamConfig struct {
+	KeyID   string // unique label, e.g. "openai-primary"
+	Model   string // model name, e.g. "gpt-4o"
+	BaseURL string // e.g. "https://api.openai.com"
+	APIKey  string
 }
 
 type TelemetryConfig struct {
@@ -40,7 +51,27 @@ func Load() (*Config, error) {
 		Postgres: PostgresConfig{
 			DSN: env("POSTGRES_DSN", "postgres://gateway:gateway@localhost:6432/gateway?sslmode=disable"),
 		},
+		Upstreams: loadUpstreams(),
 	}, nil
+}
+
+// loadUpstreams reads UPSTREAM_N_* env vars (N=0..9) until a gap is found.
+func loadUpstreams() []UpstreamConfig {
+	var upstreams []UpstreamConfig
+	for i := 0; i < 10; i++ {
+		prefix := fmt.Sprintf("UPSTREAM_%d_", i)
+		keyID := os.Getenv(prefix + "KEY_ID")
+		if keyID == "" {
+			break
+		}
+		upstreams = append(upstreams, UpstreamConfig{
+			KeyID:   keyID,
+			Model:   os.Getenv(prefix + "MODEL"),
+			BaseURL: env(prefix+"BASE_URL", "https://api.openai.com"),
+			APIKey:  os.Getenv(prefix + "API_KEY"),
+		})
+	}
+	return upstreams
 }
 
 func env(key, fallback string) string {

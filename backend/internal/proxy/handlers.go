@@ -34,6 +34,21 @@ func writeError(w http.ResponseWriter, status int, msg, errType string) {
 //  7. PII unmasking on output
 //  8. Emit OTel span with gen_ai.* attributes
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Model    string `json:"model"`
+		Messages []any  `json:"messages"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json", "invalid_request_error")
+		return
+	}
+
+	if req.Model == "" {
+		writeError(w, http.StatusBadRequest, "model is required", "invalid_request_error")
+		return
+	}
+
 	writeError(w, http.StatusNotImplemented, "not implemented", "api_error")
 }
 

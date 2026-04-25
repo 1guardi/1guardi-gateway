@@ -4,9 +4,9 @@
 tidy:
 	go mod tidy
 
-## Run both servers locally (no Docker)
+## Run both servers locally (no Docker) — loads .env if present
 dev:
-	go run ./cmd/gateway
+	@[ -f .env ] && export $$(grep -v '^#' .env | xargs) ; go run ./cmd/gateway
 
 ## Build the binary
 build:

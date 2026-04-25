@@ -35,6 +35,14 @@ body { margin: 0; padding: 0; }
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-violet: var(--violet);
+  --color-pink: var(--pink);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -49,8 +57,57 @@ body { margin: 0; padding: 0; }
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
-/* ── AI Gateway dark theme ─────────────────────────────────── */
-:root,
+/* ── AI Gateway themes ────────────────────────────────────── */
+:root {
+  --background:          oklch(0.98 0.005 220);    /* Soft white #f8f9fa */
+  --foreground:          oklch(0.20 0.02 220);     /* Dark gray/blue #1a202c */
+
+  --card:                oklch(1 0 0);             /* Pure white */
+  --card-foreground:     oklch(0.20 0.02 220);
+
+  --popover:             oklch(1 0 0);
+  --popover-foreground:  oklch(0.20 0.02 220);
+
+  /* primary = cyan-600 #0891b2 (darker for light mode) */
+  --primary:             oklch(0.55 0.14 200);
+  --primary-foreground:  oklch(0.98 0.005 220);
+
+  --success:             oklch(0.55 0.15 150);     /* Emerald-600 */
+  --warning:             oklch(0.65 0.18 70);      /* Amber-600 */
+  --error:               oklch(0.55 0.20 25);      /* Red-600 */
+  --info:                oklch(0.55 0.14 240);     /* Blue-600 */
+  --violet:              oklch(0.55 0.18 280);     /* Violet-600 */
+  --pink:                oklch(0.55 0.18 340);     /* Pink-600 */
+
+  --secondary:           oklch(0.94 0.01 220);     /* Light gray #f1f5f9 */
+  --secondary-foreground:oklch(0.25 0.02 220);
+
+  --muted:               oklch(0.94 0.01 220);
+  --muted-foreground:    oklch(0.55 0.03 220);
+
+  --accent:              oklch(0.92 0.02 210);
+  --accent-foreground:   oklch(0.20 0.02 220);
+
+  --destructive:         oklch(0.60 0.20 25);
+
+  --border:              oklch(0.20 0.02 220 / 8%);
+  --input:               oklch(0.20 0.02 220 / 10%);
+  --ring:                oklch(0.70 0.14 200 / 30%);
+
+  --radius: 0.5rem;
+
+  --sidebar:                    oklch(0.97 0.005 220);
+  --sidebar-foreground:         oklch(0.20 0.02 220);
+  --sidebar-primary:            oklch(0.55 0.14 200);
+  --sidebar-primary-foreground: oklch(0.98 0.005 220);
+  --sidebar-accent:             oklch(0.55 0.14 200 / 6%);
+  --sidebar-accent-foreground:  oklch(0.55 0.14 200);
+  --sidebar-border:             oklch(0.20 0.02 220 / 8%);
+  --sidebar-ring:               oklch(0.55 0.14 200 / 30%);
+
+  --grid-color: rgba(6, 182, 212, 0.04);
+}
+
 .dark {
   --background:          oklch(0.075 0.018 220);   /* #070c12 */
   --foreground:          oklch(0.88 0.01 220);
@@ -64,6 +121,13 @@ body { margin: 0; padding: 0; }
   /* primary = cyan-400 #22d3ee */
   --primary:             oklch(0.80 0.14 200);
   --primary-foreground:  oklch(0.08 0.02 220);
+
+  --success:             oklch(0.80 0.15 150);     /* Green-400 */
+  --warning:             oklch(0.80 0.18 70);      /* Amber-400 */
+  --error:               oklch(0.60 0.20 25);      /* Red-400 */
+  --info:                oklch(0.80 0.14 240);     /* Blue-400 */
+  --violet:              oklch(0.80 0.18 280);     /* Violet-400 */
+  --pink:                oklch(0.80 0.18 340);     /* Pink-400 */
 
   --secondary:           oklch(0.14 0.018 220);
   --secondary-foreground:oklch(0.75 0.01 220);
@@ -80,8 +144,6 @@ body { margin: 0; padding: 0; }
   --input:               oklch(0.80 0.14 200 / 12%);
   --ring:                oklch(0.80 0.14 200 / 40%);
 
-  --radius: 0.5rem;
-
   --sidebar:                    oklch(0.08 0.018 220);
   --sidebar-foreground:         oklch(0.88 0.01 220);
   --sidebar-primary:            oklch(0.80 0.14 200);
@@ -90,6 +152,8 @@ body { margin: 0; padding: 0; }
   --sidebar-accent-foreground:  oklch(0.80 0.14 200);
   --sidebar-border:             oklch(0.80 0.14 200 / 10%);
   --sidebar-ring:               oklch(0.80 0.14 200 / 40%);
+
+  --grid-color: rgba(34, 211, 238, 0.03);
 }
 
 @layer base {

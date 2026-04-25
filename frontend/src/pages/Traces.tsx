@@ -44,7 +44,7 @@ function TraceDetail({ trace }: { trace: Trace }) {
   ] as const
 
   return (
-    <div className="space-y-5 pt-2">
+    <div className="space-y-6 p-6">
       <StatusBadge status={trace.status} />
       <div className="space-y-0">
         {fields.map(([label, value]) => (
@@ -131,7 +131,7 @@ export default function Traces() {
 
       {/* Trace table */}
       <Card>
-        <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">TRACE LOG</CardTitle>
           <span className="font-mono text-xs text-muted-foreground/40">{filtered.length} results</span>
         </CardHeader>
@@ -174,10 +174,10 @@ export default function Traces() {
       </Card>
 
       <Sheet open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="w-96 bg-card border-l border-border overflow-y-auto">
+        <SheetContent className="w-96 bg-card border-l border-border overflow-y-auto p-0 gap-0">
           {selected && (
             <>
-              <SheetHeader>
+              <SheetHeader className="px-6 py-5 border-b border-border/50">
                 <SheetTitle className="font-mono text-sm text-foreground">{selected.id}</SheetTitle>
               </SheetHeader>
               <TraceDetail trace={selected} />

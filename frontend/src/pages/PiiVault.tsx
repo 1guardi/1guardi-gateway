@@ -19,7 +19,7 @@ export default function PiiVault() {
           <h1 className="font-black text-xl text-foreground tracking-tight">PII Vault</h1>
           <p className="font-mono text-xs mt-0.5 text-muted-foreground">Session vault · Redis-backed · 24h TTL</p>
         </div>
-        <Badge variant="outline" className="font-mono text-green-400 border-green-400/30 bg-green-400/6">
+        <Badge variant="outline" className="font-mono text-success border-success/30 bg-success/6">
           AES-256 · BYO KMS
         </Badge>
       </div>
@@ -29,8 +29,8 @@ export default function PiiVault() {
         <div className="space-y-3">
           {[
             { label: 'ACTIVE TOKENS',      value: piiEntries.length,                                color: 'text-primary' },
-            { label: 'ENTITY TYPES',        value: Object.keys(typeCounts).length,                  color: 'text-violet-400' },
-            { label: 'VAULT DEREFERENCES',  value: piiEntries.reduce((s, e) => s + e.hits, 0),     color: 'text-green-400' },
+            { label: 'ENTITY TYPES',        value: Object.keys(typeCounts).length,                  color: 'text-violet' },
+            { label: 'VAULT DEREFERENCES',  value: piiEntries.reduce((s, e) => s + e.hits, 0),     color: 'text-success' },
           ].map(({ label, value, color }) => (
             <Card key={label}>
               <CardHeader className="pb-2">
@@ -93,7 +93,7 @@ export default function PiiVault() {
                     <TableCell className="font-mono text-xs text-muted-foreground">{e.agent}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{e.maskedAt}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{e.ttl}</TableCell>
-                    <TableCell className={`font-mono text-xs font-bold ${e.hits > 0 ? 'text-violet-400' : 'text-muted-foreground/30'}`}>
+                    <TableCell className={`font-mono text-xs font-bold ${e.hits > 0 ? 'text-violet' : 'text-muted-foreground/30'}`}>
                       {e.hits}
                     </TableCell>
                   </TableRow>
@@ -116,13 +116,13 @@ export default function PiiVault() {
               null,
               { label: 'Detect Entities', style: 'text-primary border-primary/30 bg-primary/8' },
               null,
-              { label: 'Assign Tokens',  style: 'text-violet-400 border-violet-400/30 bg-violet-400/8' },
+              { label: 'Assign Tokens',  style: 'text-violet border-violet/30 bg-violet/8' },
               null,
-              { label: 'Store in Vault', style: 'text-green-400 border-green-400/30 bg-green-400/8' },
+              { label: 'Store in Vault', style: 'text-success border-success/30 bg-success/8' },
               null,
               { label: 'Masked → LLM',   style: 'text-primary border-primary/30 bg-primary/8' },
               null,
-              { label: 'Deref Output',   style: 'text-violet-400 border-violet-400/30 bg-violet-400/8' },
+              { label: 'Deref Output',   style: 'text-violet border-violet/30 bg-violet/8' },
               null,
               { label: 'User Sees Plain', style: 'text-muted-foreground border-border bg-muted/30' },
             ].map((item, i) =>

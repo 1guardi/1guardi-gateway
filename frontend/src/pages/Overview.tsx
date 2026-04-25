@@ -22,7 +22,7 @@ function StatCard({ label, value, delta, good, sub }: { label: string; value: st
       <CardContent>
         <p className="text-2xl font-black font-mono text-foreground mb-1">{value}</p>
         <div className="flex items-center gap-1.5">
-          <span className={`text-xs font-mono ${good ? 'text-green-400' : 'text-amber-400'}`}>{delta}</span>
+          <span className={`text-xs font-mono ${good ? 'text-success' : 'text-warning'}`}>{delta}</span>
           <span className="text-xs font-mono text-muted-foreground/50">{sub}</span>
         </div>
       </CardContent>
@@ -62,7 +62,7 @@ export default function Overview() {
             <div className="flex items-center justify-between">
               <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">COST / HOUR</CardTitle>
               <div className="flex gap-3">
-                {[{ l: 'gpt-4o', c: 'bg-primary' }, { l: 'claude-3.5', c: 'bg-violet-400' }, { l: 'gemini', c: 'bg-amber-400' }].map(({ l, c }) => (
+                {[{ l: 'gpt-4o', c: 'bg-primary' }, { l: 'claude-3.5', c: 'bg-violet' }, { l: 'gemini', c: 'bg-warning' }].map(({ l, c }) => (
                   <div key={l} className="flex items-center gap-1">
                     <div className={`w-2 h-2 rounded-full ${c}`} />
                     <span className="text-xs font-mono text-muted-foreground">{l}</span>
@@ -81,7 +81,7 @@ export default function Overview() {
                 </linearGradient>
               </defs>
               {[0, 0.25, 0.5, 0.75, 1].map((v) => (
-                <line key={v} x1="0" y1={v * H} x2={W} y2={v * H} stroke="rgba(34,211,238,0.05)" strokeWidth="1" />
+                <line key={v} x1="0" y1={v * H} x2={W} y2={v * H} stroke="var(--grid-color)" strokeWidth="1" />
               ))}
               <path d={`${smooth} L ${W} ${H} L 0 ${H} Z`} fill="url(#areaGrad)" />
               <path d={smooth} fill="none" stroke="#22d3ee" strokeWidth="1.5" />
@@ -115,7 +115,7 @@ export default function Overview() {
 
       {/* Recent traces */}
       <Card>
-        <CardHeader className="pb-2 flex-row items-center justify-between space-y-0">
+        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">RECENT TRACES</CardTitle>
           <span className="text-xs font-mono text-muted-foreground/40">showing {traces.length} of 1,847</span>
         </CardHeader>

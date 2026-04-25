@@ -42,7 +42,7 @@ function RuleRow({ rule, active, onToggle, onClick }: {
         {rule.action}
       </Badge>
       <div className="text-right flex-shrink-0 w-12">
-        <p className={`font-mono text-xs font-bold ${rule.fires24h > 0 ? 'text-amber-400' : 'text-muted-foreground/30'}`}>
+        <p className={`font-mono text-xs font-bold ${rule.fires24h > 0 ? 'text-warning' : 'text-muted-foreground/30'}`}>
           {rule.fires24h}
         </p>
         <p className="font-mono text-[9px] text-muted-foreground/30">fires/24h</p>
@@ -63,12 +63,12 @@ function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle
   ] as const
 
   return (
-    <Card className="w-72 flex-shrink-0 self-start">
-      <CardHeader className="pb-3 flex-row items-start justify-between space-y-0">
+    <Card className="w-80 flex-shrink-0 self-start">
+      <CardHeader className="p-6 pb-3 flex flex-row items-start justify-between space-y-0">
         <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">RULE DETAIL</CardTitle>
         <Button variant="ghost" size="icon" className="h-5 w-5 -mt-0.5" onClick={onClose}>✕</Button>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="p-6 pt-0 space-y-4">
         <p className="font-semibold text-foreground text-sm leading-snug">{rule.name}</p>
         <Badge variant="outline" className={`font-mono text-[10px] ${ACTION_STYLES[rule.action]}`}>{rule.action}</Badge>
         <Separator />
@@ -82,7 +82,7 @@ function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle
         </div>
         <Button
           variant="outline"
-          className={`w-full font-mono text-xs ${rule.enabled ? 'text-red-400 border-red-400/30 hover:bg-red-400/8' : 'text-primary border-primary/30 hover:bg-primary/8'}`}
+          className={`w-full font-mono text-xs ${rule.enabled ? 'text-error border-error/30 hover:bg-error/8' : 'text-primary border-primary/30 hover:bg-primary/8'}`}
           onClick={() => onToggle(rule.id)}
         >
           {rule.enabled ? 'Disable rule' : 'Enable rule'}

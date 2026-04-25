@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Sun, Moon, Monitor } from 'lucide-react'
+import { useTheme } from './theme-provider.tsx'
 import type { Page } from '../App.tsx'
 
 interface NavItem { id: Page; label: string; tag: string; letter: string }
@@ -15,6 +17,8 @@ const navItems: NavItem[] = [
 interface SidebarProps { current: Page; onChange: (p: Page) => void }
 
 export default function Sidebar({ current, onChange }: SidebarProps) {
+  const { theme, setTheme } = useTheme()
+
   return (
     <aside className="relative flex-shrink-0 w-56 flex flex-col border-r bg-sidebar border-sidebar-border">
       {/* Logo */}
@@ -76,11 +80,30 @@ export default function Sidebar({ current, onChange }: SidebarProps) {
 
       <Separator className="bg-sidebar-border" />
 
-      {/* Bottom stats */}
-      <div className="px-4 py-4">
+      {/* Theme Toggle & Bottom stats */}
+      <div className="px-4 py-4 space-y-4">
+        {/* Theme Toggle */}
+        <div className="flex items-center justify-between bg-muted/50 p-1 rounded-lg border border-sidebar-border">
+          {[
+            { id: 'light',   icon: Sun },
+            { id: 'dark',    icon: Moon },
+            { id: 'system',  icon: Monitor },
+          ].map(({ id, icon: Icon }) => (
+            <Button
+              key={id}
+              variant="ghost"
+              size="icon"
+              className={`h-7 w-7 rounded-md ${theme === id ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground/60'}`}
+              onClick={() => setTheme(id as any)}
+            >
+              <Icon className="w-3.5 h-3.5" />
+            </Button>
+          ))}
+        </div>
+
         <div className="space-y-2">
           {[
-            { label: 'UPTIME',  value: '99.98%',    color: 'text-green-400' },
+            { label: 'UPTIME',  value: '99.98%',    color: 'text-success' },
             { label: 'REGION',  value: 'us-east-1', color: 'text-primary' },
           ].map(({ label, value, color }) => (
             <div key={label} className="flex items-center justify-between">

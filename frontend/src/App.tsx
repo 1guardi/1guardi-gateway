@@ -29,7 +29,7 @@ export default function App() {
           className="fixed inset-0 pointer-events-none"
           style={{
             backgroundImage:
-              'linear-gradient(rgba(34,211,238,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,0.03) 1px, transparent 1px)',
+              'linear-gradient(var(--grid-color) 1px, transparent 1px), linear-gradient(90deg, var(--grid-color) 1px, transparent 1px)',
             backgroundSize: '48px 48px',
           }}
         />

@@ -1,0 +1,95 @@
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import type { Page } from '../App.tsx'
+
+interface NavItem { id: Page; label: string; tag: string; letter: string }
+
+const navItems: NavItem[] = [
+  { id: 'overview',   label: 'Overview',   tag: 'TOWER VIEW', letter: 'M' },
+  { id: 'traces',     label: 'Traces',     tag: 'FLIGHT LOG', letter: 'T' },
+  { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',   letter: 'G' },
+  { id: 'pii-vault',  label: 'PII Vault',  tag: 'CARGO',      letter: 'P' },
+  { id: 'router',     label: 'Router',     tag: 'ATC',        letter: 'R' },
+]
+
+interface SidebarProps { current: Page; onChange: (p: Page) => void }
+
+export default function Sidebar({ current, onChange }: SidebarProps) {
+  return (
+    <aside className="relative flex-shrink-0 w-56 flex flex-col border-r bg-sidebar border-sidebar-border">
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-5 h-14 border-b border-sidebar-border">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/8 border border-primary/20">
+          <svg viewBox="0 0 32 32" fill="none" className="w-4 h-4">
+            <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" className="text-primary" />
+            <circle cx="16" cy="16" r="8"  stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.5" className="text-primary" />
+            <circle cx="16" cy="16" r="3"  fill="currentColor" className="text-primary" />
+            <path d="M16 4V16L24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-primary" />
+          </svg>
+        </div>
+        <div>
+          <p className="font-mono font-black text-xs tracking-widest text-foreground">
+            AI <span className="text-primary">GATEWAY</span>
+          </p>
+          <p className="font-mono text-[9px] tracking-widest text-muted-foreground">TOWER ONLINE</p>
+        </div>
+      </div>
+
+      {/* Tenant badge */}
+      <div className="px-4 py-3 border-b border-sidebar-border">
+        <div className="rounded-md px-3 py-2 bg-primary/4 border border-primary/8">
+          <p className="font-mono text-[9px] tracking-widest text-muted-foreground mb-0.5">TENANT</p>
+          <p className="font-mono text-xs font-bold text-foreground">acme-corp</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="font-mono text-[9px] text-primary">3 AGENTS ONLINE</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-1">
+        {navItems.map((item) => {
+          const active = current === item.id
+          return (
+            <Button
+              key={item.id}
+              variant={active ? 'secondary' : 'ghost'}
+              className="w-full justify-start gap-3 h-auto py-2.5 px-3"
+              onClick={() => onChange(item.id)}
+            >
+              <div className={`w-6 h-6 rounded flex items-center justify-center font-mono text-xs font-bold flex-shrink-0 ${active ? 'bg-primary/12 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                {item.letter}
+              </div>
+              <div className="text-left">
+                <p className={`text-xs font-semibold leading-none mb-0.5 ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  {item.label}
+                </p>
+                <p className={`font-mono text-[9px] tracking-widest ${active ? 'text-primary' : 'text-muted-foreground/40'}`}>
+                  {item.tag}
+                </p>
+              </div>
+            </Button>
+          )
+        })}
+      </nav>
+
+      <Separator className="bg-sidebar-border" />
+
+      {/* Bottom stats */}
+      <div className="px-4 py-4">
+        <div className="space-y-2">
+          {[
+            { label: 'UPTIME',  value: '99.98%',    color: 'text-green-400' },
+            { label: 'REGION',  value: 'us-east-1', color: 'text-primary' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="flex items-center justify-between">
+              <span className="font-mono text-[9px] tracking-widest text-muted-foreground/40">{label}</span>
+              <span className={`font-mono text-[9px] font-bold ${color}`}>{value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </aside>
+  )
+}

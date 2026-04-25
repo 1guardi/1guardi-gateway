@@ -21,6 +21,14 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
@@ -31,7 +39,7 @@ services:
 
   # ── Postgres ──────────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: gateway
       POSTGRES_PASSWORD: gateway
@@ -40,6 +48,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"   # exposed for local tooling (psql, Postico, etc.)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 5s
@@ -48,12 +64,20 @@ services:
 
   # ── Redis ─────────────────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
     ports:
       - "6379:6379"   # exposed for local tooling
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -62,20 +86,30 @@ services:
 
   # ── OTel Collector ────────────────────────────────────────────────────────────
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.99.0
+    image: otel/opentelemetry-collector-contrib:0.150.1
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
       - ./otel-collector.yaml:/etc/otel/config.yaml:ro
     ports:
       - "4317:4317"   # OTLP gRPC — gateway exports here
       - "4318:4318"   # OTLP HTTP
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
     depends_on:
       - jaeger
     restart: unless-stopped
 
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
   jaeger:
-    image: jaegertracing/all-in-one:1.57
+    image: jaegertracing/all-in-one:2.17
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
@@ -83,6 +117,11 @@ services:
       - "14250:14250" # gRPC — collector sends spans here
     volumes:
       - jaeger_data:/tmp
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
     restart: unless-stopped
 
 volumes:

@@ -16,11 +16,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -o /app/gateway ./cmd/gateway
 
 # ── Runtime stage ───────────────────────────────────────────────────────────────
-# distroless/static has no shell — minimal attack surface for a gateway
-FROM gcr.io/distroless/static-debian12
+FROM alpine:3.21
+
+# Add ca-certificates for HTTPS and wget for healthchecks
+RUN apk add --no-cache ca-certificates tzdata wget
 
 COPY --from=builder /app/gateway /gateway
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 EXPOSE 8080 8081
 

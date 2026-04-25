@@ -10,12 +10,15 @@ processors:
   batch:
     timeout: 5s
     send_batch_size: 512
-  # Drops noisy health-check spans before they reach Jaeger
+  # Drops noisy health-check spans before they reach Jaeger using OTTL
   filter/health:
+    error_mode: ignore
     traces:
       span:
         - 'attributes["http.target"] == "/health"'
         - 'attributes["http.target"] == "/ready"'
+        - 'attributes["url.path"] == "/health"'
+        - 'attributes["url.path"] == "/ready"'
 
 exporters:
   # Jaeger for local dev — swap for your observability stack in production
@@ -27,7 +30,12 @@ exporters:
   debug:
     verbosity: basic
 
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 service:
+  extensions: [health_check]
   pipelines:
     traces:
       receivers: [otlp]

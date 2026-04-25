@@ -4,6 +4,7 @@ services:
 
   # ── Gateway ──────────────────────────────────────────────────────────────────
   gateway:
+    profiles: ["backend"]
     build:
       context: ..
       dockerfile: Dockerfile
@@ -41,6 +42,7 @@ services:
 
   # ── Postgres ──────────────────────────────────────────────────────────────────
   postgres:
+    profiles: ["infra"]
     image: postgres:18-alpine
     environment:
       POSTGRES_USER: gateway
@@ -66,6 +68,7 @@ services:
 
   # ── Redis ─────────────────────────────────────────────────────────────────────
   redis:
+    profiles: ["infra"]
     image: redis:8-alpine
     command: redis-server --save 60 1 --loglevel warning
     volumes:
@@ -88,6 +91,7 @@ services:
 
   # ── OTel Collector ────────────────────────────────────────────────────────────
   otel-collector:
+    profiles: ["infra"]
     image: otel/opentelemetry-collector-contrib:0.150.1
     command: ["--config=/etc/otel/config.yaml"]
     volumes:
@@ -111,6 +115,7 @@ services:
 
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
   jaeger:
+    profiles: ["infra"]
     image: jaegertracing/all-in-one:1.75.0
     environment:
       COLLECTOR_OTLP_ENABLED: "true"

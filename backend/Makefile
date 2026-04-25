@@ -27,18 +27,22 @@ lint:
 
 ## ── Docker Compose ──────────────────────────────────────────────────────────
 
+# Services in the backend profile
+BACKEND_SERVICES := gateway
+
 ## Start the full stack (builds gateway image)
 up:
-	docker compose -f deployments/docker-compose.yml up --build -d
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra up --build -d
 
 ## Start only infra dependencies (postgres, redis, otel, jaeger)
 infra:
-	docker compose -f deployments/docker-compose.yml up -d postgres redis otel-collector jaeger
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra stop $(BACKEND_SERVICES)
+	docker compose -f deployments/docker-compose.yml --profile infra up -d
 
 ## Tail logs from all services
 logs:
-	docker compose -f deployments/docker-compose.yml logs -f
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra logs -f
 
 ## Tear down and remove volumes
 down:
-	docker compose -f deployments/docker-compose.yml down -v
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra down -v

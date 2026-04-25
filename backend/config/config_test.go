@@ -1,8 +1,8 @@
 package config
 
 import (
-	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -55,31 +55,44 @@ func TestLoadUpstreams(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	// Save original env and restore after test
-	originalProxyPort := os.Getenv("PROXY_PORT")
-	originalOtelAddr := os.Getenv("OTEL_COLLECTOR_ADDR")
-	defer func() {
-		os.Setenv("PROXY_PORT", originalProxyPort)
-		os.Setenv("OTEL_COLLECTOR_ADDR", originalOtelAddr)
-	}()
-
 	t.Run("default values", func(t *testing.T) {
-		os.Unsetenv("PROXY_PORT")
-		os.Unsetenv("OTEL_COLLECTOR_ADDR")
+		// Clear env vars to ensure defaults are used
+		vars := []string{"ENV", "PROXY_PORT", "ADMIN_PORT", "OTEL_COLLECTOR_ADDR", "OTEL_SERVICE_NAME", "API_KEY_CACHE_TTL_SEC", "REDIS_ADDR", "POSTGRES_DSN"}
+		for _, v := range vars {
+			t.Setenv(v, "")
+		}
 
 		cfg, err := Load()
 		assert.NoError(t, err)
+		assert.Equal(t, "prod", cfg.Env)
 		assert.Equal(t, 8080, cfg.ProxyPort)
+		assert.Equal(t, 8081, cfg.AdminPort)
 		assert.Equal(t, "localhost:4317", cfg.Telemetry.CollectorAddr)
+		assert.Equal(t, "ai-gateway", cfg.Telemetry.ServiceName)
+		assert.Equal(t, 300*time.Second, cfg.Auth.CacheTTL)
+		assert.Equal(t, "localhost:6379", cfg.Redis.Addr)
+		assert.Equal(t, "postgres://gateway:gateway@localhost:6432/gateway?sslmode=disable", cfg.Postgres.DSN)
 	})
 
 	t.Run("override via env", func(t *testing.T) {
-		os.Setenv("PROXY_PORT", "9090")
-		os.Setenv("OTEL_COLLECTOR_ADDR", "otel:4317")
+		t.Setenv("ENV", "test")
+		t.Setenv("PROXY_PORT", "9090")
+		t.Setenv("ADMIN_PORT", "9091")
+		t.Setenv("OTEL_COLLECTOR_ADDR", "otel:4317")
+		t.Setenv("OTEL_SERVICE_NAME", "test-gateway")
+		t.Setenv("API_KEY_CACHE_TTL_SEC", "60")
+		t.Setenv("REDIS_ADDR", "redis:6379")
+		t.Setenv("POSTGRES_DSN", "postgres://user:pass@host:5432/db")
 
 		cfg, err := Load()
 		assert.NoError(t, err)
+		assert.Equal(t, "test", cfg.Env)
 		assert.Equal(t, 9090, cfg.ProxyPort)
+		assert.Equal(t, 9091, cfg.AdminPort)
 		assert.Equal(t, "otel:4317", cfg.Telemetry.CollectorAddr)
+		assert.Equal(t, "test-gateway", cfg.Telemetry.ServiceName)
+		assert.Equal(t, 60*time.Second, cfg.Auth.CacheTTL)
+		assert.Equal(t, "redis:6379", cfg.Redis.Addr)
+		assert.Equal(t, "postgres://user:pass@host:5432/db", cfg.Postgres.DSN)
 	})
 }

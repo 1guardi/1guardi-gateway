@@ -10,12 +10,16 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { apiKeys as mockKeys, type APIKey } from '../data/mock'
 
-export default function APIKeys() {
+export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
   const [keys, setKeys] = useState<APIKey[]>(mockKeys)
   const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyScope, setNewKeyScope] = useState('project')
+  const [newKeyScope, setNewKeyScope] = useState(selectedAgent === 'all' ? 'project' : 'agent')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+
+  const filteredKeys = keys.filter(k => 
+    selectedAgent === 'all' || !k.agentId || k.agentId === selectedAgent
+  )
 
   const handleCreateKey = () => {
     // Simulate API call
@@ -24,7 +28,7 @@ export default function APIKeys() {
       name: newKeyName || 'Untitled Key',
       prefix: 'sk',
       tenantId: 'acme-corp',
-      agentId: newKeyScope === 'project' ? undefined : 'AGT-001',
+      agentId: newKeyScope === 'project' ? undefined : (selectedAgent === 'all' ? 'AGT-001' : selectedAgent),
       lastUsed: 'Never',
       isActive: true,
       createdAt: new Date().toISOString().split('T')[0],
@@ -165,7 +169,7 @@ export default function APIKeys() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {keys.map((key) => (
+              {filteredKeys.map((key) => (
                 <TableRow key={key.id} className={!key.isActive ? 'opacity-50' : ''}>
                   <TableCell>
                     <div className="flex items-center gap-2">

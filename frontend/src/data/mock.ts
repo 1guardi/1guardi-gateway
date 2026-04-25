@@ -2,6 +2,7 @@ export interface Trace {
   id: string
   agent: string
   agentSub: string
+  agentId?: string
   model: string
   inputTokens: number
   outputTokens: number
@@ -23,6 +24,7 @@ export interface GuardrailRule {
   managed: boolean
   enabled: boolean
   fires24h: number
+  agentId?: string
 }
 
 export interface PiiEntry {
@@ -60,9 +62,9 @@ export interface APIKey {
 }
 
 export const traces: Trace[] = [
-  { id: 'tr-001', agent: 'AGT-001', agentSub: 'customer-support', model: 'gpt-4o',     inputTokens: 812,  outputTokens: 435, cost: '$0.031', ttft: '89ms',  tps: '42', status: 'OK',        ts: '14:32:01', threadId: 'th-aaa1' },
-  { id: 'tr-002', agent: 'AGT-002', agentSub: 'data-pipeline',    model: 'claude-3.5', inputTokens: 6120, outputTokens: 2310,cost: '$0.021', ttft: '234ms', tps: '38', status: 'GUARDRAIL',  ts: '14:31:47', threadId: 'th-bbb2' },
-  { id: 'tr-003', agent: 'AGT-001', agentSub: 'customer-support', model: 'gpt-4o',     inputTokens: 1450, outputTokens: 653, cost: '$0.052', ttft: '112ms', tps: '39', status: 'PII MASKED', ts: '14:31:22', threadId: 'th-aaa1' },
+  { id: 'tr-001', agent: 'AGT-001', agentSub: 'customer-support', agentId: 'AGT-001', model: 'gpt-4o',     inputTokens: 812,  outputTokens: 435, cost: '$0.031', ttft: '89ms',  tps: '42', status: 'OK',        ts: '14:32:01', threadId: 'th-aaa1' },
+  { id: 'tr-002', agent: 'AGT-002', agentSub: 'data-pipeline',    agentId: 'AGT-002', model: 'claude-3.5', inputTokens: 6120, outputTokens: 2310,cost: '$0.021', ttft: '234ms', tps: '38', status: 'GUARDRAIL',  ts: '14:31:47', threadId: 'th-bbb2' },
+  { id: 'tr-003', agent: 'AGT-001', agentSub: 'customer-support', agentId: 'AGT-001', model: 'gpt-4o',     inputTokens: 1450, outputTokens: 653, cost: '$0.052', ttft: '112ms', tps: '39', status: 'PII MASKED', ts: '14:31:22', threadId: 'th-aaa1' },
   { id: 'tr-004', agent: 'AGT-003', agentSub: 'code-assistant',   model: 'gpt-4o',     inputTokens: 590,  outputTokens: 301, cost: '$0.022', ttft: '156ms', tps: '44', status: 'OK',        ts: '14:30:58', threadId: 'th-ccc3' },
   { id: 'tr-005', agent: 'AGT-002', agentSub: 'data-pipeline',    model: 'gemini-pro', inputTokens: 2800, outputTokens: 1012,cost: '$0.009', ttft: '310ms', tps: '29', status: 'FALLBACK',   ts: '14:30:33', threadId: 'th-bbb2' },
   { id: 'tr-006', agent: 'AGT-003', agentSub: 'code-assistant',   model: 'gpt-4o',     inputTokens: 720,  outputTokens: 289, cost: '$0.018', ttft: '99ms',  tps: '46', status: 'OK',        ts: '14:29:51', threadId: 'th-ccc3' },
@@ -79,6 +81,7 @@ export const guardrailRules: GuardrailRule[] = [
   { id: 'mgd-004', priority: 4,  name: 'Topic Restriction',           scope: ['input'],            action: 'tag',     mode: 'parallel',   managed: true,  enabled: true,  fires24h: 21 },
   { id: 'mgd-005', priority: 5,  name: 'Tool Call Parameter Anomaly', scope: ['tool_call'],        action: 'block',   mode: 'parallel',   managed: true,  enabled: false, fires24h: 0  },
   { id: 'mgd-006', priority: 6,  name: 'Knowledge Grounding Check',  scope: ['output'],           action: 'tag',     mode: 'sequential', managed: true,  enabled: false, fires24h: 0  },
+  { id: 'agt-001', priority: 100,name: 'Agent Support Scope',        scope: ['input'],            action: 'block',   mode: 'parallel',   managed: false, enabled: true,  fires24h: 5, agentId: 'AGT-001' },
   { id: 'cst-001', priority: 10, name: 'No Competitor Mentions',      scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 2  },
   { id: 'cst-002', priority: 11, name: 'Max Response Length',         scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 5  },
 ]

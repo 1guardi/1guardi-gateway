@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Sun, Moon, Monitor } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Sun, Moon, Monitor, Bot } from 'lucide-react'
 import { useTheme } from './theme-provider.tsx'
 import type { Page } from '../App.tsx'
 
@@ -15,9 +16,14 @@ const navItems: NavItem[] = [
   { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',letter: 'K' },
 ]
 
-interface SidebarProps { current: Page; onChange: (p: Page) => void }
+interface SidebarProps { 
+  current: Page
+  onChange: (p: Page) => void 
+  agent: string
+  onAgentChange: (a: string) => void
+}
 
-export default function Sidebar({ current, onChange }: SidebarProps) {
+export default function Sidebar({ current, onChange, agent, onAgentChange }: SidebarProps) {
   const { theme, setTheme } = useTheme()
 
   return (
@@ -41,14 +47,25 @@ export default function Sidebar({ current, onChange }: SidebarProps) {
       </div>
 
       {/* Tenant badge */}
-      <div className="px-4 py-3 border-b border-sidebar-border">
+      <div className="px-4 py-3 border-b border-sidebar-border space-y-3">
         <div className="rounded-md px-3 py-2 bg-primary/4 border border-primary/8">
           <p className="font-mono text-[9px] tracking-widest text-muted-foreground mb-0.5">TENANT</p>
-          <p className="font-mono text-xs font-bold text-foreground">acme-corp</p>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            <span className="font-mono text-[9px] text-primary">3 AGENTS ONLINE</span>
-          </div>
+          <p className="font-mono text-xs font-bold text-foreground uppercase">acme-corp</p>
+        </div>
+
+        <div className="space-y-1">
+          <p className="font-mono text-[9px] tracking-widest text-muted-foreground/60 px-1">ACTIVE SCOPE</p>
+          <Select value={agent} onValueChange={onAgentChange}>
+            <SelectTrigger className="h-8 bg-background border-sidebar-border font-mono text-[10px] uppercase">
+              <SelectValue placeholder="Select Agent" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="font-mono text-[10px] uppercase">All Agents (Global)</SelectItem>
+              <SelectItem value="AGT-001" className="font-mono text-[10px] uppercase text-primary">AGT-001 Support</SelectItem>
+              <SelectItem value="AGT-002" className="font-mono text-[10px] uppercase text-primary">AGT-002 Data</SelectItem>
+              <SelectItem value="AGT-003" className="font-mono text-[10px] uppercase text-primary">AGT-003 Assistant</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

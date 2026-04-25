@@ -30,7 +30,18 @@ function RuleRow({ rule, active, onToggle, onClick }: {
         className="flex-shrink-0"
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{rule.name}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-foreground truncate">{rule.name}</p>
+          {rule.agentId ? (
+            <Badge variant="outline" className="font-mono text-[9px] h-4 px-1 text-primary border-primary/20 bg-primary/5 uppercase">
+              Agent: {rule.agentId}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="font-mono text-[9px] h-4 px-1 text-muted-foreground border-muted-foreground/20 uppercase">
+              Global
+            </Badge>
+          )}
+        </div>
         <div className="flex items-center gap-2 mt-0.5">
           {rule.scope.map((s) => (
             <span key={s} className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{s}</span>
@@ -54,8 +65,9 @@ function RuleRow({ rule, active, onToggle, onClick }: {
 function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle: (id: string) => void; onClose: () => void }) {
   const fields = [
     ['ID',        rule.id],
+    ['SCOPE',     rule.agentId ? `AGENT: ${rule.agentId}` : 'GLOBAL'],
     ['PRIORITY',  String(rule.priority)],
-    ['SCOPE',     rule.scope.join(', ')],
+    ['TARGET',     rule.scope.join(', ')],
     ['MODE',      rule.mode],
     ['MANAGED',   rule.managed ? 'yes' : 'no'],
     ['FIRES 24H', String(rule.fires24h)],
@@ -92,7 +104,7 @@ function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle
   )
 }
 
-export default function Guardrails() {
+export default function Guardrails({ selectedAgent }: { selectedAgent: string }) {
   const [rules, setRules] = useState<GuardrailRule[]>(guardrailRules)
   const [selected, setSelected] = useState<GuardrailRule | null>(null)
 
@@ -101,8 +113,21 @@ export default function Guardrails() {
     setSelected((prev) => prev?.id === id ? { ...prev, enabled: !prev.enabled } : prev)
   }
 
-  const managed = rules.filter((r) => r.managed)
-  const custom  = rules.filter((r) => !r.managed)
+  const filtered = rules.filter(r => 
+    selectedAgent === 'all' || 
+    !r.agentId || 
+    r.agentId === selectedAgent
+  ).sort((a, b) => {
+    // Priority sorting: Agent-specific rules first, then by priority
+    if (selectedAgent !== 'all') {
+      if (a.agentId && !b.agentId) return -1
+      if (!a.agentId && b.agentId) return 1
+    }
+    return b.priority - a.priority
+  })
+
+  const managed = filtered.filter((r) => r.managed)
+  const custom  = filtered.filter((r) => !r.managed)
 
   return (
     <div className="p-6 space-y-5 max-w-7xl">

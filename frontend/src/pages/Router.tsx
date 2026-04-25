@@ -5,13 +5,16 @@ import { Separator } from '@/components/ui/separator'
 import { CIRCUIT_STYLES, scoreColor, quotaColor } from '@/lib/styles.ts'
 import { endpoints } from '../data/mock.ts'
 
-export default function Router() {
+export default function Router({ selectedAgent }: { selectedAgent: string }) {
   return (
     <div className="p-6 space-y-5 max-w-7xl">
       <div className="flex items-center justify-between h-14">
         <div>
           <h1 className="font-black text-xl text-foreground tracking-tight">Router</h1>
-          <p className="font-mono text-xs mt-0.5 text-muted-foreground">ATC · Fallback-first routing · {endpoints.length} endpoints</p>
+          <p className="font-mono text-xs mt-0.5 text-muted-foreground">
+            ATC · Fallback-first routing · {endpoints.length} endpoints
+            {selectedAgent !== 'all' && ` · showing weights for ${selectedAgent}`}
+          </p>
         </div>
       </div>
 
@@ -97,7 +100,9 @@ export default function Router() {
       {/* Scoring weights */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">SCORING WEIGHTS · agent: AGT-001</CardTitle>
+          <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase">
+            SCORING WEIGHTS · scope: {selectedAgent === 'all' ? 'GLOBAL DEFAULT' : selectedAgent}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-4">

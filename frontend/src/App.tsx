@@ -11,17 +11,18 @@ import APIKeys from './pages/APIKeys.tsx'
 
 export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'api-keys'
 
-const pages: Record<Page, ReactNode> = {
-  overview: <Overview />,
-  traces: <Traces />,
-  guardrails: <Guardrails />,
-  'pii-vault': <PiiVault />,
-  router: <Router />,
-  'api-keys': <APIKeys />,
-}
-
 export default function App() {
   const [page, setPage] = useState<Page>('overview')
+  const [selectedAgent, setSelectedAgent] = useState<string | 'all'>('all')
+
+  const pages: Record<Page, ReactNode> = {
+    overview: <Overview selectedAgent={selectedAgent} />,
+    traces: <Traces selectedAgent={selectedAgent} />,
+    guardrails: <Guardrails selectedAgent={selectedAgent} />,
+    'pii-vault': <PiiVault selectedAgent={selectedAgent} />,
+    router: <Router selectedAgent={selectedAgent} />,
+    'api-keys': <APIKeys selectedAgent={selectedAgent} />,
+  }
 
   return (
     <TooltipProvider>
@@ -35,7 +36,7 @@ export default function App() {
             backgroundSize: '48px 48px',
           }}
         />
-        <Sidebar current={page} onChange={setPage} />
+        <Sidebar current={page} onChange={setPage} agent={selectedAgent} onAgentChange={setSelectedAgent} />
         <main className="relative flex-1 overflow-y-auto min-h-screen">
           {pages[page]}
         </main>

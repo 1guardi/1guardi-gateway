@@ -30,8 +30,11 @@ function StatCard({ label, value, delta, good, sub }: { label: string; value: st
   )
 }
 
-export default function Overview() {
-  const totalCost = traces.reduce((s, t) => s + parseFloat(t.cost.replace('$', '')), 0)
+export default function Overview({ selectedAgent }: { selectedAgent: string }) {
+  const filteredTraces = traces.filter(t => 
+    selectedAgent === 'all' || t.agentId === selectedAgent
+  )
+  const totalCost = filteredTraces.reduce((s, t) => s + parseFloat(t.cost.replace('$', '')), 0)
 
   return (
     <div className="p-6 space-y-5 max-w-7xl">
@@ -39,7 +42,9 @@ export default function Overview() {
       <div className="flex items-center justify-between h-14">
         <div>
           <h1 className="font-black text-xl text-foreground tracking-tight">Tower View</h1>
-          <p className="font-mono text-xs mt-0.5 text-muted-foreground">Last 24 hours · acme-corp</p>
+          <p className="font-mono text-xs mt-0.5 text-muted-foreground truncate max-w-md">
+            Last 24 hours · acme-corp {selectedAgent !== 'all' ? `· scope: ${selectedAgent}` : '· global scope'}
+          </p>
         </div>
         <Badge variant="outline" className="font-mono gap-1.5 text-primary border-primary/30 bg-primary/6">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -49,10 +54,10 @@ export default function Overview() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="TTFT P99"        value="124ms"                              delta="↓ 12%" good={true}  sub="vs yesterday" />
-        <StatCard label="COST / 24H"      value={`$${totalCost.toFixed(3)}`}          delta="↑ 8%"  good={false} sub={`${traces.length} traces`} />
-        <StatCard label="GUARDRAIL FIRES" value={String(traces.filter(t => t.status === 'GUARDRAIL').length)} delta="↑ 3" good={false} sub="this window" />
-        <StatCard label="PII DETECTIONS"  value={String(traces.filter(t => t.status === 'PII MASKED').length)} delta="stable" good={true} sub="masked + vaulted" />
+        <StatCard label="TTFT P99"        value={filteredTraces.length > 0 ? "124ms" : "0ms"} delta="↓ 12%" good={true}  sub="vs yesterday" />
+        <StatCard label="COST / 24H"      value={`$${totalCost.toFixed(3)}`}          delta="↑ 8%"  good={false} sub={`${filteredTraces.length} traces`} />
+        <StatCard label="GUARDRAIL FIRES" value={String(filteredTraces.filter(t => t.status === 'GUARDRAIL').length)} delta="↑ 3" good={false} sub="this window" />
+        <StatCard label="PII DETECTIONS"  value={String(filteredTraces.filter(t => t.status === 'PII MASKED').length)} delta="stable" good={true} sub="masked + vaulted" />
       </div>
 
       {/* Chart + circuit breakers */}

@@ -31,7 +31,7 @@ function TraceDetail({ trace }: { trace: Trace }) {
   ]
 
   const fields = [
-    ['AGENT',         `${trace.agent} · ${trace.agentSub}`],
+    ['AGENT',         trace.agentId ? `${trace.agentId} (${trace.agentSub})` : trace.agentSub],
     ['THREAD',        trace.threadId],
     ['MODEL',         trace.model],
     ['TIMESTAMP',     trace.ts],
@@ -78,14 +78,15 @@ function TraceDetail({ trace }: { trace: Trace }) {
   )
 }
 
-export default function Traces() {
+export default function Traces({ selectedAgent }: { selectedAgent: string }) {
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [modelFilter,  setModelFilter]  = useState<string>('ALL')
   const [selected, setSelected] = useState<Trace | null>(null)
 
   const filtered = traces.filter((t) =>
     (statusFilter === 'ALL' || t.status === statusFilter) &&
-    (modelFilter  === 'ALL' || t.model  === modelFilter)
+    (modelFilter  === 'ALL' || t.model  === modelFilter) &&
+    (selectedAgent === 'all' || t.agentId === selectedAgent)
   )
 
   return (
@@ -149,13 +150,25 @@ export default function Traces() {
                 {filtered.map((t) => (
                   <TableRow
                     key={t.id}
-                    className="border-border cursor-pointer"
+                    className="border-border cursor-pointer transition-colors hover:bg-muted/30"
                     onClick={() => setSelected(t)}
                   >
                     <TableCell className="font-mono text-xs text-primary">{t.id}</TableCell>
                     <TableCell className="font-mono text-xs">
-                      <span className="text-foreground">{t.agent}</span>
-                      <span className="ml-1.5 text-muted-foreground/40">{t.agentSub}</span>
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-foreground">{t.agentSub}</span>
+                          {t.agentId ? (
+                            <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-primary border-primary/20 bg-primary/5 uppercase">
+                              ID: {t.agentId}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-muted-foreground border-muted-foreground/20 uppercase">
+                              Global
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{t.threadId}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{t.model}</TableCell>

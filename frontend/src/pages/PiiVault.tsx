@@ -6,18 +6,24 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { PII_TYPE_STYLES } from '@/lib/styles.ts'
 import { piiEntries } from '../data/mock.ts'
 
-const typeCounts = piiEntries.reduce<Record<string, number>>((acc, e) => {
-  acc[e.type] = (acc[e.type] ?? 0) + 1
-  return acc
-}, {})
+export default function PiiVault({ selectedAgent }: { selectedAgent: string }) {
+  const filteredEntries = piiEntries.filter(e => 
+    selectedAgent === 'all' || e.agent === selectedAgent
+  )
 
-export default function PiiVault() {
+  const typeCounts = filteredEntries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.type] = (acc[e.type] ?? 0) + 1
+    return acc
+  }, {})
+
   return (
     <div className="p-6 space-y-5 max-w-7xl">
       <div className="flex items-center justify-between h-14">
         <div>
           <h1 className="font-black text-xl text-foreground tracking-tight">PII Vault</h1>
-          <p className="font-mono text-xs mt-0.5 text-muted-foreground">Session vault · Redis-backed · 24h TTL</p>
+          <p className="font-mono text-xs mt-0.5 text-muted-foreground truncate max-w-md">
+            Session vault · acme-corp {selectedAgent !== 'all' ? `· scope: ${selectedAgent}` : '· global scope'}
+          </p>
         </div>
         <Badge variant="outline" className="font-mono text-success border-success/30 bg-success/6">
           AES-256 · BYO KMS
@@ -28,9 +34,9 @@ export default function PiiVault() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="space-y-3">
           {[
-            { label: 'ACTIVE TOKENS',      value: piiEntries.length,                                color: 'text-primary' },
+            { label: 'ACTIVE TOKENS',      value: filteredEntries.length,                            color: 'text-primary' },
             { label: 'ENTITY TYPES',        value: Object.keys(typeCounts).length,                  color: 'text-violet' },
-            { label: 'VAULT DEREFERENCES',  value: piiEntries.reduce((s, e) => s + e.hits, 0),     color: 'text-success' },
+            { label: 'VAULT DEREFERENCES',  value: filteredEntries.reduce((s, e) => s + e.hits, 0),     color: 'text-success' },
           ].map(({ label, value, color }) => (
             <Card key={label}>
               <CardHeader className="pb-2">
@@ -49,7 +55,7 @@ export default function PiiVault() {
           </CardHeader>
           <CardContent className="space-y-3">
             {Object.entries(typeCounts).map(([type, count]) => {
-              const pct = Math.round((count / piiEntries.length) * 100)
+              const pct = Math.round((count / (filteredEntries.length || 1)) * 100)
               return (
                 <div key={type}>
                   <div className="flex items-center justify-between mb-1.5">
@@ -80,7 +86,7 @@ export default function PiiVault() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {piiEntries.map((e) => (
+                {filteredEntries.map((e) => (
                   <TableRow key={e.token} className="border-border">
                     <TableCell>
                       <Badge variant="outline" className="font-mono text-xs text-primary border-primary/20 bg-primary/6">

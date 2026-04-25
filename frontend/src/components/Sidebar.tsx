@@ -12,6 +12,7 @@ const navItems: NavItem[] = [
   { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',   letter: 'G' },
   { id: 'pii-vault',  label: 'PII Vault',  tag: 'CARGO',      letter: 'P' },
   { id: 'router',     label: 'Router',     tag: 'ATC',        letter: 'R' },
+  { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',letter: 'K' },
 ]
 
 interface SidebarProps { current: Page; onChange: (p: Page) => void }

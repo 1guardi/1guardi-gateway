@@ -7,8 +7,9 @@ import Traces from './pages/Traces.tsx'
 import Guardrails from './pages/Guardrails.tsx'
 import PiiVault from './pages/PiiVault.tsx'
 import Router from './pages/Router.tsx'
+import APIKeys from './pages/APIKeys.tsx'
 
-export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router'
+export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'api-keys'
 
 const pages: Record<Page, ReactNode> = {
   overview: <Overview />,
@@ -16,6 +17,7 @@ const pages: Record<Page, ReactNode> = {
   guardrails: <Guardrails />,
   'pii-vault': <PiiVault />,
   router: <Router />,
+  'api-keys': <APIKeys />,
 }
 
 export default function App() {

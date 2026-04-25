@@ -60,7 +60,7 @@ func main() {
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
-		Handler: proxy.NewRouter(cfg),
+		Handler: proxy.NewRouter(cfg, database),
 		// Long write timeout to accommodate streaming LLM responses
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,

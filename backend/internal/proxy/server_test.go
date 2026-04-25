@@ -1,29 +1,131 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 )
 
-func TestExtractTenantContext(t *testing.T) {
-	middleware := extractTenantContext(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestAuthenticate(t *testing.T) {
+	// Setup test DB
+	database, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	database.AutoMigrate(&db.Tenant{}, &db.Agent{}, &db.APIKey{})
+
+	// Create a test tenant and key
+	tenant := db.Tenant{Name: "test-tenant"}
+	database.Create(&tenant)
+
+	rawKey, hash, _ := auth.GenerateAPIKey()
+	apiKey := db.APIKey{
+		Name:     "test-key",
+		KeyHash:  hash,
+		Prefix:   auth.KeyPrefix,
+		TenantID: tenant.ID,
+		IsActive: true,
+	}
+	database.Create(&apiKey)
+
+	srv := &Server{db: database}
+	middleware := srv.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tc := TenantCtx(r.Context())
-		assert.Equal(t, "tenant-123", tc.TenantID)
-		assert.Equal(t, "agent-456", tc.AgentID)
+		assert.Equal(t, fmt.Sprintf("%d", tenant.ID), tc.TenantID)
 		assert.Equal(t, "thread-789", tc.ThreadID)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	req.Header.Set("X-Tenant-Id", "tenant-123")
-	req.Header.Set("X-Agent-Id", "agent-456")
+	req.Header.Set("Authorization", "Bearer "+rawKey)
 	req.Header.Set("X-Thread-Id", "thread-789")
 
 	rr := httptest.NewRecorder()
 	middleware.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAuthenticate_ProjectKeyWithHeader(t *testing.T) {
+	database, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	database.AutoMigrate(&db.Tenant{}, &db.Agent{}, &db.APIKey{})
+
+	tenant := db.Tenant{Name: "test-tenant"}
+	database.Create(&tenant)
+
+	rawKey, hash, _ := auth.GenerateAPIKey()
+	apiKey := db.APIKey{
+		KeyHash:  hash,
+		TenantID: tenant.ID,
+		IsActive: true,
+	}
+	database.Create(&apiKey)
+
+	srv := &Server{db: database}
+	middleware := srv.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tc := TenantCtx(r.Context())
+		assert.Equal(t, "custom-agent-id", tc.AgentID)
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	req.Header.Set("X-Agent-Id", "custom-agent-id")
+
+	rr := httptest.NewRecorder()
+	middleware.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAuthenticate_ScopedKey(t *testing.T) {
+	database, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	database.AutoMigrate(&db.Tenant{}, &db.Agent{}, &db.APIKey{})
+
+	tenant := db.Tenant{Name: "test-tenant"}
+	database.Create(&tenant)
+
+	agent := db.Agent{Name: "support", TenantID: tenant.ID}
+	database.Create(&agent)
+
+	rawKey, hash, _ := auth.GenerateAPIKey()
+	agentID := agent.ID
+	apiKey := db.APIKey{
+		KeyHash:  hash,
+		TenantID: tenant.ID,
+		AgentID:  &agentID,
+		IsActive: true,
+	}
+	database.Create(&apiKey)
+
+	srv := &Server{db: database}
+
+	t.Run("autofill agent id", func(t *testing.T) {
+		middleware := srv.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tc := TenantCtx(r.Context())
+			assert.Equal(t, fmt.Sprintf("%d", agent.ID), tc.AgentID)
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		req.Header.Set("Authorization", "Bearer "+rawKey)
+		rr := httptest.NewRecorder()
+		middleware.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	t.Run("mismatching agent id", func(t *testing.T) {
+		middleware := srv.Authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		req.Header.Set("Authorization", "Bearer "+rawKey)
+		req.Header.Set("X-Agent-Id", "wrong-agent")
+		rr := httptest.NewRecorder()
+		middleware.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+	})
 }

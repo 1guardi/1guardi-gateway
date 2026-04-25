@@ -23,7 +23,7 @@ processors:
 exporters:
   # Jaeger for local dev — swap for your observability stack in production
   otlp/jaeger:
-    endpoint: jaeger:14250
+    endpoint: jaeger:4317
     tls:
       insecure: true
   # Logs spans to collector stdout at debug level — handy during development

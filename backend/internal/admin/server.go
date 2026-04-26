@@ -13,33 +13,38 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 )
 
 // Server holds dependencies for the admin API.
 type Server struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db        *gorm.DB
+	cfg       *config.Config
+	llmRouter *llmrouter.Router
 }
 
 // NewRouter builds the internal admin API handler.
 // This port should never be exposed publicly — bind to 127.0.0.1 in production
 // or keep it cluster-internal in Kubernetes.
-func NewRouter(cfg *config.Config, database *gorm.DB) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router) http.Handler {
 	srv := &Server{
-		db:  database,
-		cfg: cfg,
+		db:        database,
+		cfg:       cfg,
+		llmRouter: llmRouter,
 	}
 
-	r := chi.NewRouter()
+	mux := chi.NewRouter()
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.Recoverer)
+	mux.Use(middleware.RequestID)
+	mux.Use(middleware.Recoverer)
 
 	// Health + readiness probes (used by Docker / k8s)
-	r.Get("/health", handleHealth)
-	r.Get("/ready", srv.handleReady)
+	mux.Get("/health", handleHealth)
+	mux.Get("/ready", srv.handleReady)
 
-	r.Route("/api/v1", func(r chi.Router) {
+	mux.Route("/api/v1", func(r chi.Router) {
+		r.Get("/router/endpoints", srv.handleListEndpoints)
+
 		r.Get("/tenants", srv.handleListTenants)
 		r.Post("/tenants", srv.handleCreateTenant)
 
@@ -57,7 +62,17 @@ func NewRouter(cfg *config.Config, database *gorm.DB) http.Handler {
 		})
 	})
 
-	return r
+	return mux
+}
+
+func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
+	if s.llmRouter == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.llmRouter.List())
 }
 
 type healthResponse struct {

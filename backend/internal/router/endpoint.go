@@ -71,6 +71,19 @@ func (cb *circuitBreaker) recordFailure() {
 	}
 }
 
+func (cb *circuitBreaker) stateName() string {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	switch cb.state {
+	case stateOpen:
+		return "OPEN"
+	case stateHalfOpen:
+		return "HALF-OPEN"
+	default:
+		return "CLOSED"
+	}
+}
+
 // rollingWindow tracks the last N float64 values.
 type rollingWindow struct {
 	mu     sync.Mutex
@@ -166,6 +179,12 @@ func (e *Endpoint) RecordError() {
 	e.signals.errors.record(1)
 	e.cb.recordFailure()
 }
+
+func (e *Endpoint) TTFTP50() float64        { return e.signals.ttfts.avg() }
+func (e *Endpoint) TTFTP99() float64        { return e.signals.ttfts.p99() }
+func (e *Endpoint) AvgTPS() float64         { return e.signals.tpss.avg() }
+func (e *Endpoint) ErrorRate() float64      { return e.signals.errors.avg() }
+func (e *Endpoint) CircuitStateName() string { return e.cb.stateName() }
 
 // Score returns a composite performance score. Higher is better.
 // score = w1*(1/TTFT_P99) + w2*avgTPS + w3*(1-errorRate)

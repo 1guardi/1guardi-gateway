@@ -9,9 +9,18 @@ import { ACTION_STYLES } from '@/lib/styles.ts'
 import { guardrailRules } from '../data/mock.ts'
 import type { GuardrailRule } from '../data/mock.ts'
 
-function RuleRow({ rule, active, onToggle, onClick }: {
+function SubGroupLabel({ label }: { label: string }) {
+  return (
+    <div className="px-4 py-1.5 bg-muted/30 border-b border-border/30">
+      <span className="font-mono text-[9px] tracking-widest text-muted-foreground/60">{label}</span>
+    </div>
+  )
+}
+
+function RuleRow({ rule, active, readOnly, onToggle, onClick }: {
   rule: GuardrailRule
   active: boolean
+  readOnly?: boolean
   onToggle: (id: string) => void
   onClick: () => void
 }) {
@@ -25,7 +34,8 @@ function RuleRow({ rule, active, onToggle, onClick }: {
       </span>
       <Switch
         checked={rule.enabled}
-        onCheckedChange={() => onToggle(rule.id)}
+        disabled={readOnly}
+        onCheckedChange={readOnly ? undefined : () => onToggle(rule.id)}
         onClick={(e) => e.stopPropagation()}
         className="flex-shrink-0"
       />
@@ -62,12 +72,17 @@ function RuleRow({ rule, active, onToggle, onClick }: {
   )
 }
 
-function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle: (id: string) => void; onClose: () => void }) {
+function RuleDetail({ rule, readOnly, onToggle, onClose }: {
+  rule: GuardrailRule
+  readOnly?: boolean
+  onToggle: (id: string) => void
+  onClose: () => void
+}) {
   const fields = [
     ['ID',        rule.id],
     ['SCOPE',     rule.agentId ? `AGENT: ${rule.agentId}` : 'GLOBAL'],
     ['PRIORITY',  String(rule.priority)],
-    ['TARGET',     rule.scope.join(', ')],
+    ['TARGET',    rule.scope.join(', ')],
     ['MODE',      rule.mode],
     ['MANAGED',   rule.managed ? 'yes' : 'no'],
     ['FIRES 24H', String(rule.fires24h)],
@@ -92,15 +107,46 @@ function RuleDetail({ rule, onToggle, onClose }: { rule: GuardrailRule; onToggle
             </div>
           ))}
         </div>
-        <Button
-          variant="outline"
-          className={`w-full font-mono text-xs ${rule.enabled ? 'text-error border-error/30 hover:bg-error/8' : 'text-primary border-primary/30 hover:bg-primary/8'}`}
-          onClick={() => onToggle(rule.id)}
-        >
-          {rule.enabled ? 'Disable rule' : 'Enable rule'}
-        </Button>
+        {readOnly ? (
+          <p className="font-mono text-[10px] text-muted-foreground/50 text-center pt-1">
+            switch to global view to edit
+          </p>
+        ) : (
+          <Button
+            variant="outline"
+            className={`w-full font-mono text-xs ${rule.enabled ? 'text-error border-error/30 hover:bg-error/8' : 'text-primary border-primary/30 hover:bg-primary/8'}`}
+            onClick={() => onToggle(rule.id)}
+          >
+            {rule.enabled ? 'Disable rule' : 'Enable rule'}
+          </Button>
+        )}
       </CardContent>
     </Card>
+  )
+}
+
+function RuleRows({ items, selected, readOnly, onToggle, onSelect }: {
+  items: GuardrailRule[]
+  selected: GuardrailRule | null
+  readOnly?: boolean
+  onToggle: (id: string) => void
+  onSelect: (rule: GuardrailRule | null) => void
+}) {
+  return (
+    <>
+      {items.map((rule, i) => (
+        <div key={rule.id}>
+          <RuleRow
+            rule={rule}
+            active={selected?.id === rule.id}
+            readOnly={readOnly}
+            onToggle={onToggle}
+            onClick={() => onSelect(selected?.id === rule.id ? null : rule)}
+          />
+          {i < items.length - 1 && <Separator className="bg-border/50" />}
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -108,26 +154,24 @@ export default function Guardrails({ selectedAgent }: { selectedAgent: string })
   const [rules, setRules] = useState<GuardrailRule[]>(guardrailRules)
   const [selected, setSelected] = useState<GuardrailRule | null>(null)
 
+  const isAgentMode = selectedAgent !== 'all'
+
   const toggle = (id: string) => {
     setRules((prev) => prev.map((r) => r.id === id ? { ...r, enabled: !r.enabled } : r))
     setSelected((prev) => prev?.id === id ? { ...prev, enabled: !prev.enabled } : prev)
   }
 
-  const filtered = rules.filter(r => 
-    selectedAgent === 'all' || 
-    !r.agentId || 
-    r.agentId === selectedAgent
-  ).sort((a, b) => {
-    // Priority sorting: Agent-specific rules first, then by priority
-    if (selectedAgent !== 'all') {
-      if (a.agentId && !b.agentId) return -1
-      if (!a.agentId && b.agentId) return 1
-    }
-    return b.priority - a.priority
-  })
+  const sortByPriority = (a: GuardrailRule, b: GuardrailRule) => b.priority - a.priority
 
-  const managed = filtered.filter((r) => r.managed)
-  const custom  = filtered.filter((r) => !r.managed)
+  const globalManaged = rules.filter((r) => !r.agentId && r.managed).sort(sortByPriority)
+  const globalCustom  = rules.filter((r) => !r.agentId && !r.managed).sort(sortByPriority)
+  const agentManaged  = rules.filter((r) => r.agentId && r.managed  && (!isAgentMode || r.agentId === selectedAgent)).sort(sortByPriority)
+  const agentCustom   = rules.filter((r) => r.agentId && !r.managed && (!isAgentMode || r.agentId === selectedAgent)).sort(sortByPriority)
+
+  const globalTotal = globalManaged.length + globalCustom.length
+  const agentTotal  = agentManaged.length + agentCustom.length
+
+  const selectedIsGlobal = selected ? !selected.agentId : false
 
   return (
     <div className="p-6 space-y-5 max-w-7xl">
@@ -146,8 +190,8 @@ export default function Guardrails({ selectedAgent }: { selectedAgent: string })
         {[
           { label: 'ACTIVE RULES', value: rules.filter((r) => r.enabled).length },
           { label: 'FIRES / 24H',  value: rules.reduce((s, r) => s + r.fires24h, 0) },
-          { label: 'MANAGED',      value: managed.length },
-          { label: 'CUSTOM',       value: custom.length },
+          { label: 'GLOBAL',       value: globalTotal },
+          { label: 'AGENT-LEVEL',  value: agentTotal },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardHeader className="pb-2">
@@ -163,33 +207,72 @@ export default function Guardrails({ selectedAgent }: { selectedAgent: string })
       {/* Rules + detail */}
       <div className="flex gap-4">
         <div className="flex-1 space-y-3 min-w-0">
-          {[{ title: 'MANAGED RULES', items: managed }, { title: 'CUSTOM RULES', items: custom }].map(({ title, items }) => (
-            <Card key={title} className="overflow-hidden">
-              <CardHeader className="pb-0 border-b border-border">
-                <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground pb-3">{title}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+
+          {/* Agent Rules */}
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-0 border-b border-border">
+              <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground pb-3">
+                {isAgentMode ? `AGENT RULES — ${selectedAgent}` : 'AGENT RULES'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {agentManaged.length === 0 && agentCustom.length === 0 ? (
+                <p className="font-mono text-[10px] text-muted-foreground/40 text-center py-6">no agent-level rules</p>
+              ) : (
                 <ScrollArea>
-                  {items.map((rule, i) => (
-                    <div key={rule.id}>
-                      <RuleRow
-                        rule={rule}
-                        active={selected?.id === rule.id}
-                        onToggle={toggle}
-                        onClick={() => setSelected(selected?.id === rule.id ? null : rule)}
-                      />
-                      {i < items.length - 1 && <Separator className="bg-border/50" />}
-                    </div>
-                  ))}
+                  {agentManaged.length > 0 && (
+                    <>
+                      <SubGroupLabel label="MANAGED" />
+                      <RuleRows items={agentManaged} selected={selected} onToggle={toggle} onSelect={setSelected} />
+                    </>
+                  )}
+                  {agentCustom.length > 0 && (
+                    <>
+                      {agentManaged.length > 0 && <Separator className="bg-border/40" />}
+                      <SubGroupLabel label="CUSTOM" />
+                      <RuleRows items={agentCustom} selected={selected} onToggle={toggle} onSelect={setSelected} />
+                    </>
+                  )}
                 </ScrollArea>
-              </CardContent>
-            </Card>
-          ))}
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Global Rules */}
+          <Card className="overflow-hidden">
+            <CardHeader className="pb-0 border-b border-border">
+              <div className="flex items-center justify-between pb-3">
+                <CardTitle className="font-mono text-[10px] tracking-widest text-muted-foreground">GLOBAL RULES</CardTitle>
+                {isAgentMode && (
+                  <span className="font-mono text-[9px] text-muted-foreground/50 bg-muted px-2 py-0.5 rounded">reference only</span>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea>
+                {globalManaged.length > 0 && (
+                  <>
+                    <SubGroupLabel label="MANAGED" />
+                    <RuleRows items={globalManaged} selected={selected} readOnly={isAgentMode} onToggle={toggle} onSelect={setSelected} />
+                  </>
+                )}
+                {globalCustom.length > 0 && (
+                  <>
+                    {globalManaged.length > 0 && <Separator className="bg-border/40" />}
+                    <SubGroupLabel label="CUSTOM" />
+                    <RuleRows items={globalCustom} selected={selected} readOnly={isAgentMode} onToggle={toggle} onSelect={setSelected} />
+                  </>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
         </div>
 
         {selected && (
           <RuleDetail
             rule={selected}
+            readOnly={isAgentMode && selectedIsGlobal}
             onToggle={toggle}
             onClose={() => setSelected(null)}
           />

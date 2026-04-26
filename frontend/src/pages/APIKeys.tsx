@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Key, Copy, Shield, ShieldAlert, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,39 +9,102 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { apiKeys as mockKeys, type APIKey } from '../data/mock'
+import type { AgentSummary } from '../App.tsx'
 
-export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
-  const [keys, setKeys] = useState<APIKey[]>(mockKeys)
+interface APIKeyResponse {
+  ID: number
+  CreatedAt: string
+  Name: string
+  Prefix: string
+  TenantID: number
+  AgentID: number | null
+  LastUsedAt: string | null
+  IsActive: boolean
+}
+
+interface CreateKeyResponse extends APIKeyResponse {
+  key: string
+}
+
+interface APIKeyVM {
+  id: string
+  name: string
+  prefix: string
+  tenantId: string
+  agentId?: string
+  lastUsed: string
+  isActive: boolean
+  createdAt: string
+}
+
+function toVM(k: APIKeyResponse): APIKeyVM {
+  return {
+    id: String(k.ID),
+    name: k.Name,
+    prefix: k.Prefix,
+    tenantId: String(k.TenantID),
+    agentId: k.AgentID != null ? String(k.AgentID) : undefined,
+    lastUsed: k.LastUsedAt ? new Date(k.LastUsedAt).toLocaleDateString() : 'Never',
+    isActive: k.IsActive,
+    createdAt: new Date(k.CreatedAt).toLocaleDateString(),
+  }
+}
+
+interface APIKeysProps {
+  selectedAgent: string
+  tenantId: string | null
+  agents: AgentSummary[]
+}
+
+export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProps) {
+  const [keys, setKeys] = useState<APIKeyVM[]>([])
   const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyScope, setNewKeyScope] = useState(selectedAgent === 'all' ? 'project' : 'agent')
+  const [newKeyScope, setNewKeyScope] = useState<'project' | 'agent'>('project')
+  const [newKeyAgentId, setNewKeyAgentId] = useState<string>('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  const filteredKeys = keys.filter(k => 
+  useEffect(() => {
+    if (!tenantId) return
+    fetch(`/api/v1/tenants/${tenantId}/keys`)
+      .then((r) => r.json())
+      .then((data: APIKeyResponse[]) => setKeys(data.map(toVM)))
+      .catch(() => {})
+  }, [tenantId])
+
+  const agentMap: Record<string, string> = Object.fromEntries(agents.map((a) => [String(a.ID), a.Name]))
+
+  const filteredKeys = keys.filter(k =>
     selectedAgent === 'all' || !k.agentId || k.agentId === selectedAgent
   )
 
   const handleCreateKey = () => {
-    // Simulate API call
-    const newKey: APIKey = {
-      id: `key-${Math.floor(Math.random() * 1000)}`,
-      name: newKeyName || 'Untitled Key',
-      prefix: 'sk',
-      tenantId: 'acme-corp',
-      agentId: newKeyScope === 'project' ? undefined : (selectedAgent === 'all' ? 'AGT-001' : selectedAgent),
-      lastUsed: 'Never',
-      isActive: true,
-      createdAt: new Date().toISOString().split('T')[0],
-    }
-    
-    setKeys([newKey, ...keys])
-    setCreatedKey(`sk_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`)
-    setNewKeyName('')
+    if (!tenantId) return
+    const body: { name: string; agent_id?: number } = { name: newKeyName || 'Untitled Key' }
+    if (newKeyScope === 'agent' && newKeyAgentId) body.agent_id = Number(newKeyAgentId)
+    fetch(`/api/v1/tenants/${tenantId}/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then((r) => r.json())
+      .then((data: CreateKeyResponse) => {
+        setKeys([toVM(data), ...keys])
+        setCreatedKey(data.key)
+        setNewKeyName('')
+        setNewKeyScope('project')
+        setNewKeyAgentId('')
+      })
+      .catch(() => {})
   }
 
   const handleRevoke = (id: string) => {
-    setKeys(keys.map(k => k.id === id ? { ...k, isActive: false } : k))
+    if (!tenantId) return
+    fetch(`/api/v1/tenants/${tenantId}/keys/${id}`, { method: 'DELETE' })
+      .then((r) => {
+        if (r.ok) setKeys(keys.map(k => k.id === id ? { ...k, isActive: false } : k))
+      })
+      .catch(() => {})
   }
 
   return (
@@ -51,7 +114,7 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
           <h1 className="font-black text-xl text-foreground tracking-tight">API Keys</h1>
           <p className="font-mono text-xs mt-0.5 text-muted-foreground">Access credentials · {keys.length} entries</p>
         </div>
-        
+
         <Dialog open={isCreateOpen} onOpenChange={(open) => {
           setIsCreateOpen(open)
           if (!open) setCreatedKey(null)
@@ -73,30 +136,55 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
                     <Label htmlFor="name" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Key Name</Label>
-                    <Input 
-                      id="name" 
-                      placeholder="e.g. Production Frontend" 
+                    <Input
+                      id="name"
+                      placeholder="e.g. Production Frontend"
                       value={newKeyName}
                       onChange={(e) => setNewKeyName(e.target.value)}
                       className="font-mono text-xs"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="scope" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Scope</Label>
-                    <Select value={newKeyScope} onValueChange={setNewKeyScope}>
+                    <Label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Scope</Label>
+                    <Select value={newKeyScope} onValueChange={(v) => { setNewKeyScope(v as 'project' | 'agent'); setNewKeyAgentId('') }}>
                       <SelectTrigger className="font-mono text-xs">
-                        <SelectValue placeholder="Select scope" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="project" className="font-mono text-xs">Project Level (All Agents)</SelectItem>
-                        <SelectItem value="agent" className="font-mono text-xs">Agent Specific</SelectItem>
+                        <SelectItem value="agent" className="font-mono text-xs" disabled={agents.length === 0}>
+                          Agent Specific{agents.length === 0 ? ' (no agents)' : ''}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  {newKeyScope === 'agent' && agents.length > 0 && (
+                    <div className="grid gap-2">
+                      <Label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Agent</Label>
+                      <Select value={newKeyAgentId} onValueChange={setNewKeyAgentId}>
+                        <SelectTrigger className="font-mono text-xs">
+                          <SelectValue placeholder="Select agent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {agents.map((a) => (
+                            <SelectItem key={a.ID} value={String(a.ID)} className="font-mono text-xs">
+                              {a.Name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsCreateOpen(false)} className="font-mono text-xs">Cancel</Button>
-                  <Button onClick={handleCreateKey} className="font-mono text-xs">Generate Key</Button>
+                  <Button
+                    onClick={handleCreateKey}
+                    className="font-mono text-xs"
+                    disabled={!tenantId || (newKeyScope === 'agent' && !newKeyAgentId)}
+                  >
+                    Generate Key
+                  </Button>
                 </DialogFooter>
               </>
             ) : (
@@ -119,7 +207,7 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
                   <div className="mt-4 flex items-start gap-2 p-3 bg-primary/5 rounded-md border border-primary/20">
                     <ShieldAlert className="w-4 h-4 text-primary mt-0.5" />
                     <p className="text-[11px] text-primary/80 leading-relaxed font-mono uppercase">
-                      ANYONE WITH THIS KEY CAN MAKE REQUESTS ON BEHALF OF YOUR TENANT. 
+                      ANYONE WITH THIS KEY CAN MAKE REQUESTS ON BEHALF OF YOUR TENANT.
                       TREAT IT AS A SENSITIVE CREDENTIAL.
                     </p>
                   </div>
@@ -147,18 +235,18 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
         <Card>
           <CardContent className="p-3">
             <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase mb-2">Total Requests (24h)</p>
-            <p className="font-mono text-2xl font-black text-foreground">14.2k</p>
+            <p className="font-mono text-2xl font-black text-foreground">—</p>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[10px] font-mono text-success uppercase">↑ 8.2%</span>
+              <span className="text-[10px] font-mono text-muted-foreground uppercase">Not tracked</span>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase mb-2">Key Usage</p>
-            <p className="font-mono text-2xl font-black text-foreground">89%</p>
+            <p className="font-mono text-2xl font-black text-foreground">—</p>
             <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[10px] font-mono text-violet uppercase">Near Quota</span>
+              <span className="text-[10px] font-mono text-muted-foreground uppercase">Not tracked</span>
             </div>
           </CardContent>
         </Card>
@@ -193,7 +281,7 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
                     <TableCell>
                       {key.agentId ? (
                         <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-primary border-primary/20 bg-primary/5 uppercase">
-                          AGENT: {key.agentId}
+                          {agentMap[key.agentId] ?? `AGENT ${key.agentId}`}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-muted-foreground border-muted-foreground/20 uppercase">
@@ -214,9 +302,9 @@ export default function APIKeys({ selectedAgent }: { selectedAgent: string }) {
                           <ExternalLink className="w-3 h-3" />
                         </Button>
                         {key.isActive && (
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-error hover:bg-error/10"
                             onClick={() => handleRevoke(key.id)}
                           >

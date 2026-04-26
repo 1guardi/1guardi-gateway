@@ -1,11 +1,60 @@
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { CIRCUIT_STYLES, scoreColor, quotaColor } from '@/lib/styles.ts'
-import { endpoints } from '../data/mock.ts'
+
+interface EndpointStatus {
+  id: string
+  label: string
+  model: string
+  ttft_p50_ms: number
+  ttft_p99_ms: number
+  avg_tps: number
+  error_rate: number
+  quota_used: number
+  circuit_state: 'CLOSED' | 'OPEN' | 'HALF-OPEN'
+  score: number
+}
+
+interface EndpointVM {
+  id: string
+  label: string
+  model: string
+  ttftP50: string
+  ttftP99: string
+  avgTps: string
+  errorRate: string
+  quotaUsed: number
+  circuitState: 'CLOSED' | 'OPEN' | 'HALF-OPEN'
+  score: number
+}
+
+function toVM(e: EndpointStatus): EndpointVM {
+  return {
+    id: e.id,
+    label: e.label,
+    model: e.model,
+    ttftP50: e.ttft_p50_ms > 0 ? `${Math.round(e.ttft_p50_ms)}ms` : '—',
+    ttftP99: e.ttft_p99_ms > 0 ? `${Math.round(e.ttft_p99_ms)}ms` : '—',
+    avgTps:  e.avg_tps > 0    ? `${Math.round(e.avg_tps)}`         : '—',
+    errorRate: `${(e.error_rate * 100).toFixed(1)}%`,
+    quotaUsed: e.quota_used,
+    circuitState: e.circuit_state,
+    score: e.score,
+  }
+}
 
 export default function Router({ selectedAgent }: { selectedAgent: string }) {
+  const [endpoints, setEndpoints] = useState<EndpointVM[]>([])
+
+  useEffect(() => {
+    fetch('/api/v1/router/endpoints')
+      .then((r) => r.json())
+      .then((data: EndpointStatus[]) => setEndpoints(data.map(toVM)))
+      .catch(() => {/* backend not running — leave empty */})
+  }, [])
   return (
     <div className="p-6 space-y-5 max-w-7xl">
       <div className="flex items-center justify-between h-14">
@@ -52,7 +101,7 @@ export default function Router({ selectedAgent }: { selectedAgent: string }) {
                       {ep.circuitState}
                     </Badge>
                   </div>
-                  <p className="font-mono text-xs text-muted-foreground ml-4.5">{ep.model} · {ep.region}</p>
+                  <p className="font-mono text-xs text-muted-foreground ml-4.5">{ep.model}</p>
                 </div>
                 <div className="text-right">
                   <p className="font-mono text-[10px] text-muted-foreground mb-1">ROUTING SCORE</p>

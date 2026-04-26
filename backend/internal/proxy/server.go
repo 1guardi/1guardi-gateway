@@ -29,9 +29,9 @@ type Server struct {
 }
 
 // NewRouter builds the OpenAI-compatible proxy HTTP handler.
-func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, r *llmrouter.Router) http.Handler {
 	srv := &Server{
-		router:  llmrouter.New(cfg.Upstreams),
+		router:  r,
 		db:      database,
 		redis:   redisCache,
 		authTTL: cfg.Auth.CacheTTL,
@@ -44,19 +44,19 @@ func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client) 
 		},
 	}
 
-	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(srv.Authenticate)
+	mux := chi.NewRouter()
+	mux.Use(middleware.RequestID)
+	mux.Use(middleware.RealIP)
+	mux.Use(middleware.Recoverer)
+	mux.Use(srv.Authenticate)
 
 	// OpenAI-compatible surface
-	r.Post("/v1/chat/completions", srv.handleChatCompletions)
-	r.Post("/v1/completions", handleCompletions)
-	r.Post("/v1/embeddings", handleEmbeddings)
-	r.Get("/v1/models", handleListModels)
+	mux.Post("/v1/chat/completions", srv.handleChatCompletions)
+	mux.Post("/v1/completions", handleCompletions)
+	mux.Post("/v1/embeddings", handleEmbeddings)
+	mux.Get("/v1/models", handleListModels)
 
-	return otelhttp.NewHandler(r, "proxy",
+	return otelhttp.NewHandler(mux, "proxy",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 	)
 }

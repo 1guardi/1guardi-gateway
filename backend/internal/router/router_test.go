@@ -257,3 +257,43 @@ func TestRouter_Pick_AllCircuitsOpen(t *testing.T) {
 	_, err := r.Pick("gpt-4o")
 	assert.ErrorIs(t, err, ErrNoEndpoint)
 }
+
+func TestRouter_List_Empty(t *testing.T) {
+	r := New(nil)
+	assert.Empty(t, r.List())
+}
+
+func TestRouter_List_ReturnsAllEndpoints(t *testing.T) {
+	r := New([]config.UpstreamConfig{
+		{KeyID: "ep-a", Model: "gpt-4o", BaseURL: "http://a", APIKey: "k1"},
+		{KeyID: "ep-b", Model: "claude-3", BaseURL: "http://b", APIKey: "k2"},
+	})
+	r.endpoints[0].RecordSuccess(80, 50)
+	r.endpoints[1].RecordSuccess(200, 30)
+
+	list := r.List()
+	require.Len(t, list, 2)
+
+	a := list[0]
+	assert.Equal(t, "ep-a", a.ID)
+	assert.Equal(t, "gpt-4o", a.Model)
+	assert.Equal(t, "CLOSED", a.CircuitState)
+	assert.InDelta(t, 80.0, a.TTFTP50Ms, 0.01)
+	assert.InDelta(t, 80.0, a.TTFTP99Ms, 0.01)
+	assert.InDelta(t, 50.0, a.AvgTPS, 0.01)
+	assert.InDelta(t, 0.0, a.ErrorRate, 0.01)
+	assert.Positive(t, a.Score)
+}
+
+func TestRouter_List_OpenCircuit(t *testing.T) {
+	r := New([]config.UpstreamConfig{
+		{KeyID: "broken", Model: "gpt-4o", BaseURL: "http://x", APIKey: "k"},
+	})
+	for i := 0; i < failThreshold; i++ {
+		r.endpoints[0].RecordError()
+	}
+
+	list := r.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, "OPEN", list[0].CircuitState)
+}

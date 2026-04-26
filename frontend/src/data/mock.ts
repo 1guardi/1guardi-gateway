@@ -81,9 +81,12 @@ export const guardrailRules: GuardrailRule[] = [
   { id: 'mgd-004', priority: 4,  name: 'Topic Restriction',           scope: ['input'],            action: 'tag',     mode: 'parallel',   managed: true,  enabled: true,  fires24h: 21 },
   { id: 'mgd-005', priority: 5,  name: 'Tool Call Parameter Anomaly', scope: ['tool_call'],        action: 'block',   mode: 'parallel',   managed: true,  enabled: false, fires24h: 0  },
   { id: 'mgd-006', priority: 6,  name: 'Knowledge Grounding Check',  scope: ['output'],           action: 'tag',     mode: 'sequential', managed: true,  enabled: false, fires24h: 0  },
-  { id: 'agt-001', priority: 100,name: 'Agent Support Scope',        scope: ['input'],            action: 'block',   mode: 'parallel',   managed: false, enabled: true,  fires24h: 5, agentId: 'AGT-001' },
-  { id: 'cst-001', priority: 10, name: 'No Competitor Mentions',      scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 2  },
-  { id: 'cst-002', priority: 11, name: 'Max Response Length',         scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 5  },
+  { id: 'agt-mgd-001', priority: 2,  name: 'PII Leakage — Output',        scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: true,  enabled: true,  fires24h: 4, agentId: 'AGT-001' },
+  { id: 'agt-mgd-002', priority: 3,  name: 'Toxicity / Hate Speech',      scope: ['input', 'output'],  action: 'block',   mode: 'parallel',   managed: true,  enabled: true,  fires24h: 1, agentId: 'AGT-001' },
+  { id: 'agt-mgd-003', priority: 5,  name: 'Tool Call Parameter Anomaly', scope: ['tool_call'],        action: 'block',   mode: 'parallel',   managed: true,  enabled: false, fires24h: 0, agentId: 'AGT-002' },
+  { id: 'agt-001',     priority: 100, name: 'Agent Support Scope',        scope: ['input'],            action: 'block',   mode: 'parallel',   managed: false, enabled: true,  fires24h: 5, agentId: 'AGT-001' },
+  { id: 'cst-001',     priority: 10, name: 'No Competitor Mentions',      scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 2  },
+  { id: 'cst-002',     priority: 11, name: 'Max Response Length',         scope: ['output'],           action: 'rewrite', mode: 'parallel',   managed: false, enabled: true,  fires24h: 5  },
 ]
 
 export const piiEntries: PiiEntry[] = [
@@ -105,7 +108,7 @@ export const endpoints: Endpoint[] = [
 ]
 
 export const apiKeys: APIKey[] = [
-  { id: 'key-001', name: 'Production Main', prefix: 'sk', tenantId: 'acme-corp', lastUsed: '2 mins ago', isActive: true, createdAt: '2024-03-10' },
+  // { id: 'key-001', name: 'Production Main', prefix: 'sk', tenantId: 'acme-corp', lastUsed: '2 mins ago', isActive: true, createdAt: '2024-03-10' },
   { id: 'key-002', name: 'Support Agent Key', prefix: 'sk', tenantId: 'acme-corp', agentId: 'AGT-001', lastUsed: '1 hour ago', isActive: true, createdAt: '2024-03-12' },
   { id: 'key-003', name: 'Dev Test Key', prefix: 'sk', tenantId: 'acme-corp', lastUsed: 'Never', isActive: false, createdAt: '2024-03-15' },
 ]

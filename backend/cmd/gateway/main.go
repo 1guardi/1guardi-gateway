@@ -17,6 +17,7 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/internal/admin"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/proxy"
+	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/telemetry"
 )
 
@@ -57,6 +58,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := db.SeedDefaultTenant(database); err != nil {
+		slog.Warn("failed to seed default tenant", "err", err)
+	}
+
 	// Redis initialization
 	redisCache, err := db.RedisSetup(*cfg)
 	if err != nil {
@@ -64,10 +69,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Single router instance shared by both servers so admin can observe live metrics.
+	router := llmrouter.New(cfg.Upstreams)
+
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
-		Handler: proxy.NewRouter(cfg, database, redisCache),
+		Handler: proxy.NewRouter(cfg, database, redisCache, router),
 		// Long write timeout to accommodate streaming LLM responses
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,
@@ -75,7 +83,7 @@ func main() {
 	}
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.NewRouter(cfg, database),
+		Handler:      admin.NewRouter(cfg, database, router),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -23,7 +23,7 @@ const (
 type circuitState int
 
 const (
-	stateClosed   circuitState = iota
+	stateClosed circuitState = iota
 	stateOpen
 	stateHalfOpen
 )
@@ -165,6 +165,7 @@ func (e *Endpoint) BaseURL() string { return e.cfg.BaseURL }
 func (e *Endpoint) APIKey() string  { return e.cfg.APIKey }
 func (e *Endpoint) Model() string   { return e.cfg.Model }
 func (e *Endpoint) KeyID() string   { return e.cfg.KeyID }
+func (e *Endpoint) TenantID() uint  { return e.cfg.TenantID }
 
 func (e *Endpoint) Available() bool { return e.cb.available() }
 
@@ -180,10 +181,10 @@ func (e *Endpoint) RecordError() {
 	e.cb.recordFailure()
 }
 
-func (e *Endpoint) TTFTP50() float64        { return e.signals.ttfts.avg() }
-func (e *Endpoint) TTFTP99() float64        { return e.signals.ttfts.p99() }
-func (e *Endpoint) AvgTPS() float64         { return e.signals.tpss.avg() }
-func (e *Endpoint) ErrorRate() float64      { return e.signals.errors.avg() }
+func (e *Endpoint) TTFTP50() float64         { return e.signals.ttfts.avg() }
+func (e *Endpoint) TTFTP99() float64         { return e.signals.ttfts.p99() }
+func (e *Endpoint) AvgTPS() float64          { return e.signals.tpss.avg() }
+func (e *Endpoint) ErrorRate() float64       { return e.signals.errors.avg() }
 func (e *Endpoint) CircuitStateName() string { return e.cb.stateName() }
 
 // Score returns a composite performance score. Higher is better.

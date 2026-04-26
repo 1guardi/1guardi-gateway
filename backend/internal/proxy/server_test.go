@@ -10,6 +10,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 )
@@ -128,4 +129,37 @@ func TestAuthenticate_ScopedKey(t *testing.T) {
 		middleware.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusForbidden, rr.Code)
 	})
+}
+
+func TestNewRouter(t *testing.T) {
+	database, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	cfg := &config.Config{}
+
+	// The NewRouter should create a fully wired chi router.
+	handler := NewRouter(cfg, database, nil, nil)
+
+	// Because of the Authenticate middleware, any request without a valid token
+	// should be blocked with 401 Unauthorized.
+
+	endpoints := []string{
+		"/v1/chat/completions",
+		"/v1/completions",
+		"/v1/embeddings",
+		"/v1/models",
+	}
+
+	for _, ep := range endpoints {
+		t.Run(ep, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, ep, nil)
+			if ep == "/v1/models" {
+				req = httptest.NewRequest(http.MethodGet, ep, nil)
+			}
+
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			// Auth should block it before routing
+			assert.Equal(t, http.StatusUnauthorized, rr.Code)
+		})
+	}
 }

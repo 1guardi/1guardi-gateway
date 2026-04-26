@@ -60,13 +60,13 @@ type modelPrice struct {
 }
 
 var pricingTable = map[string]modelPrice{
-	"gpt-4o":                     {2.50, 10.00},
-	"gpt-4o-mini":                {0.15, 0.60},
-	"gpt-4-turbo":                {10.00, 30.00},
-	"gpt-3.5-turbo":              {0.50, 1.50},
-	"claude-opus-4-7":            {15.00, 75.00},
-	"claude-sonnet-4-6":          {3.00, 15.00},
-	"claude-haiku-4-5-20251001":  {0.80, 4.00},
+	"gpt-4o":                    {2.50, 10.00},
+	"gpt-4o-mini":               {0.15, 0.60},
+	"gpt-4-turbo":               {10.00, 30.00},
+	"gpt-3.5-turbo":             {0.50, 1.50},
+	"claude-opus-4-7":           {15.00, 75.00},
+	"claude-sonnet-4-6":         {3.00, 15.00},
+	"claude-haiku-4-5-20251001": {0.80, 4.00},
 }
 
 func calcCost(model string, inputTokens, outputTokens int) float64 {
@@ -124,7 +124,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Pick upstream endpoint.
-	endpoint, err := s.router.Pick(model)
+	tc := TenantCtx(r.Context())
+	var tenantID uint
+	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
+
+	endpoint, err := s.router.Pick(tenantID, model)
 	if err != nil {
 		if errors.Is(err, llmrouter.ErrNoEndpoint) {
 			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("no available upstream for model %q", model), "api_error")
@@ -205,7 +209,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		endpoint.RecordSuccess(ttftMS, tps)
 	}
 
-	tc := TenantCtx(r.Context())
 	span := trace.SpanFromContext(r.Context())
 	span.SetAttributes(
 		attribute.String("gen_ai.model", model),

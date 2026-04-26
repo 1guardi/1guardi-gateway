@@ -198,7 +198,7 @@ func TestEndpoint_RecordErrorUpdatesSignals(t *testing.T) {
 
 func TestRouter_Pick_NoEndpoints(t *testing.T) {
 	r := New(nil)
-	_, err := r.Pick("gpt-4o")
+	_, err := r.Pick(0, "gpt-4o")
 	assert.ErrorIs(t, err, ErrNoEndpoint)
 }
 
@@ -206,7 +206,7 @@ func TestRouter_Pick_NoMatchingModel(t *testing.T) {
 	r := New([]config.UpstreamConfig{
 		{KeyID: "k1", Model: "gpt-4o", BaseURL: "http://x", APIKey: "k"},
 	})
-	_, err := r.Pick("gpt-4o-mini")
+	_, err := r.Pick(0, "gpt-4o-mini")
 	assert.ErrorIs(t, err, ErrNoEndpoint)
 }
 
@@ -214,7 +214,7 @@ func TestRouter_Pick_ReturnsEndpoint(t *testing.T) {
 	r := New([]config.UpstreamConfig{
 		{KeyID: "k1", Model: "gpt-4o", BaseURL: "http://x", APIKey: "k"},
 	})
-	ep, err := r.Pick("gpt-4o")
+	ep, err := r.Pick(0, "gpt-4o")
 	require.NoError(t, err)
 	assert.Equal(t, "gpt-4o", ep.Model())
 	assert.Equal(t, "k1", ep.KeyID())
@@ -228,7 +228,7 @@ func TestRouter_Pick_PrefersBetterScore(t *testing.T) {
 	r.endpoints[0].RecordSuccess(500, 20) // slow: high TTFT, low TPS
 	r.endpoints[1].RecordSuccess(50, 80)  // fast: low TTFT, high TPS
 
-	ep, err := r.Pick("gpt-4o")
+	ep, err := r.Pick(0, "gpt-4o")
 	require.NoError(t, err)
 	assert.Equal(t, "fast", ep.KeyID())
 }
@@ -242,7 +242,7 @@ func TestRouter_Pick_SkipsOpenCircuit(t *testing.T) {
 		r.endpoints[0].RecordError()
 	}
 
-	ep, err := r.Pick("gpt-4o")
+	ep, err := r.Pick(0, "gpt-4o")
 	require.NoError(t, err)
 	assert.Equal(t, "healthy", ep.KeyID())
 }
@@ -254,7 +254,7 @@ func TestRouter_Pick_AllCircuitsOpen(t *testing.T) {
 	for i := 0; i < failThreshold; i++ {
 		r.endpoints[0].RecordError()
 	}
-	_, err := r.Pick("gpt-4o")
+	_, err := r.Pick(0, "gpt-4o")
 	assert.ErrorIs(t, err, ErrNoEndpoint)
 }
 
@@ -296,4 +296,38 @@ func TestRouter_List_OpenCircuit(t *testing.T) {
 	list := r.List()
 	require.Len(t, list, 1)
 	assert.Equal(t, "OPEN", list[0].CircuitState)
+}
+
+func TestRouter_Add(t *testing.T) {
+	r := New([]config.UpstreamConfig{})
+	assert.Len(t, r.List(), 0)
+
+	r.Add(config.UpstreamConfig{KeyID: "new-ep", Model: "gpt-4o", BaseURL: "http://test", APIKey: "k"})
+
+	list := r.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, "new-ep", list[0].ID)
+}
+
+func TestRouter_Remove(t *testing.T) {
+	r := New([]config.UpstreamConfig{
+		{KeyID: "ep1", TenantID: 1, Model: "gpt-4o", BaseURL: "http://test", APIKey: "k"},
+		{KeyID: "ep2", TenantID: 1, Model: "gpt-4o", BaseURL: "http://test", APIKey: "k"},
+	})
+
+	assert.Len(t, r.List(), 2)
+
+	// Remove matching
+	r.Remove(1, "ep1")
+	list := r.List()
+	require.Len(t, list, 1)
+	assert.Equal(t, "ep2", list[0].ID)
+
+	// Remove non-matching (wrong tenant)
+	r.Remove(2, "ep2")
+	require.Len(t, r.List(), 1)
+
+	// Remove matching
+	r.Remove(1, "ep2")
+	require.Len(t, r.List(), 0)
 }

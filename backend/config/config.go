@@ -21,10 +21,11 @@ type Config struct {
 // UpstreamConfig describes one LLM endpoint the gateway can route to.
 // Multiple entries with the same Model enable fallback routing.
 type UpstreamConfig struct {
-	KeyID   string // unique label, e.g. "openai-primary"
-	Model   string // model name, e.g. "gpt-4o"
-	BaseURL string // e.g. "https://api.openai.com"
-	APIKey  string
+	KeyID    string // unique label, e.g. "openai-primary"
+	Model    string // model name, e.g. "gpt-4o"
+	BaseURL  string // e.g. "https://api.openai.com"
+	APIKey   string
+	TenantID uint // 0 means default/global if applicable, but usually tied to a tenant
 }
 
 type TelemetryConfig struct {

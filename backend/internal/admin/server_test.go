@@ -120,3 +120,128 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 	assert.Equal(t, "gpt-4o", endpoints[0].Model)
 	assert.Equal(t, "CLOSED", endpoints[0].CircuitState)
 }
+
+func TestAgentHandlers(t *testing.T) {
+	database := setupTestDB(t)
+	router := NewRouter(&config.Config{}, database, nil)
+
+	// Setup Tenant
+	tenant := db.Tenant{Name: "tenant1"}
+	database.Create(&tenant)
+
+	// Create Agent
+	agentBody := `{"Name":"agent1"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/agents", bytes.NewBufferString(agentBody))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+
+	// List Agents
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/agents", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var agents []db.Agent
+	json.Unmarshal(rr.Body.Bytes(), &agents)
+	assert.Len(t, agents, 1)
+	assert.Equal(t, "agent1", agents[0].Name)
+}
+
+func TestKeyHandlers(t *testing.T) {
+	database := setupTestDB(t)
+	router := NewRouter(&config.Config{}, database, nil)
+
+	tenant := db.Tenant{Name: "tenant1"}
+	database.Create(&tenant)
+
+	// Create Key
+	keyBody := `{"name":"test-key"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/keys", bytes.NewBufferString(keyBody))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+
+	var created struct {
+		ID  uint   `json:"ID"`
+		Key string `json:"key"`
+	}
+	json.Unmarshal(rr.Body.Bytes(), &created)
+	assert.NotEmpty(t, created.Key)
+
+	// List Keys
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/keys", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var keys []db.APIKey
+	json.Unmarshal(rr.Body.Bytes(), &keys)
+	assert.Len(t, keys, 1)
+	assert.Equal(t, "test-key", keys[0].Name)
+	assert.Empty(t, keys[0].KeyHash, "KeyHash should be hidden")
+
+	// Revoke Key
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/keys/1", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+
+	var revokedKey db.APIKey
+	database.First(&revokedKey, 1)
+	assert.False(t, revokedKey.IsActive)
+}
+
+func TestUpstreamHandlers(t *testing.T) {
+	database := setupTestDB(t)
+	r := llmrouter.New([]config.UpstreamConfig{})
+	router := NewRouter(&config.Config{}, database, r)
+
+	tenant := db.Tenant{Name: "tenant1"}
+	database.Create(&tenant)
+
+	// Create Upstream
+	upBody := `{"key_id":"test-ups","model":"test-model","base_url":"http://test","api_key":"sk-123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/upstreams", bytes.NewBufferString(upBody))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusCreated, rr.Code)
+
+	// List Upstreams
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/upstreams", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var upstreams []db.Upstream
+	json.Unmarshal(rr.Body.Bytes(), &upstreams)
+	assert.Len(t, upstreams, 1)
+	assert.Equal(t, "test-ups", upstreams[0].KeyID)
+
+	// Delete Upstream
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/upstreams/test-ups", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+}
+
+func TestNotImplementedAdminHandlers(t *testing.T) {
+	database := setupTestDB(t)
+	router := NewRouter(&config.Config{}, database, nil)
+
+	endpoints := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/tenants/1"},
+		{http.MethodGet, "/api/v1/tenants/1/rules"},
+		{http.MethodPost, "/api/v1/tenants/1/rules"},
+	}
+
+	for _, ep := range endpoints {
+		req := httptest.NewRequest(ep.method, ep.path, nil)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusNotImplemented, rr.Code)
+	}
+}

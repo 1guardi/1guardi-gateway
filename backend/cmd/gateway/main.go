@@ -58,7 +58,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := db.SeedDefaultTenant(database); err != nil {
+	if err := db.SeedDefaultTenant(database, cfg.Upstreams); err != nil {
 		slog.Warn("failed to seed default tenant", "err", err)
 	}
 
@@ -69,8 +69,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Load all upstreams from DB to initialize the router
+	var dbUpstreams []db.Upstream
+	if err := database.Find(&dbUpstreams).Error; err != nil {
+		slog.Error("failed to load upstreams from db", "err", err)
+		os.Exit(1)
+	}
+	upstreamConfigs := make([]config.UpstreamConfig, len(dbUpstreams))
+	for i, u := range dbUpstreams {
+		upstreamConfigs[i] = config.UpstreamConfig{
+			KeyID:    u.KeyID,
+			Model:    u.ProviderModel,
+			BaseURL:  u.BaseURL,
+			APIKey:   u.APIKey,
+			TenantID: u.TenantID,
+		}
+	}
+
 	// Single router instance shared by both servers so admin can observe live metrics.
-	router := llmrouter.New(cfg.Upstreams)
+	router := llmrouter.New(upstreamConfigs)
 
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{

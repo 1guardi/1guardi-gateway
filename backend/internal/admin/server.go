@@ -59,6 +59,10 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 			r.Get("/keys", srv.handleListKeys)
 			r.Post("/keys", srv.handleCreateKey)
 			r.Delete("/keys/{keyID}", srv.handleRevokeKey)
+
+			r.Get("/upstreams", srv.handleListUpstreams)
+			r.Post("/upstreams", srv.handleCreateUpstream)
+			r.Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
 		})
 	})
 
@@ -162,6 +166,7 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(agent)
 }
 
@@ -224,6 +229,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	resp.KeyHash = "" // Hide hash
 
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -246,4 +252,80 @@ func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (s *Server) handleListUpstreams(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	var upstreams []db.Upstream
+	if err := s.db.Where("tenant_id = ?", tenantID).Find(&upstreams).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(upstreams)
+}
+
+func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	var req struct {
+		KeyID   string `json:"key_id"`
+		Model   string `json:"model"`
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	up := db.Upstream{
+		KeyID:         req.KeyID,
+		ProviderModel: req.Model,
+		BaseURL:       req.BaseURL,
+		APIKey:        req.APIKey,
+		TenantID:      uint(tenantID),
+	}
+
+	if err := s.db.Create(&up).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Update live router
+	if s.llmRouter != nil {
+		s.llmRouter.Add(config.UpstreamConfig{
+			KeyID:    up.KeyID,
+			Model:    up.ProviderModel,
+			BaseURL:  up.BaseURL,
+			APIKey:   up.APIKey,
+			TenantID: up.TenantID,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(up)
+}
+
+func (s *Server) handleDeleteUpstream(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	keyID := chi.URLParam(r, "keyID")
+
+	var up db.Upstream
+	if err := s.db.Where("tenant_id = ? AND key_id = ?", tenantID, keyID).First(&up).Error; err != nil {
+		http.Error(w, "upstream not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.Delete(&up).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Update live router
+	if s.llmRouter != nil {
+		s.llmRouter.Remove(uint(tenantID), keyID)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

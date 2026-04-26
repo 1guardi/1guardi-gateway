@@ -96,3 +96,23 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, "postgres://user:pass@host:5432/db", cfg.Postgres.DSN)
 	})
 }
+
+func TestIntEnv(t *testing.T) {
+	t.Run("valid integer", func(t *testing.T) {
+		t.Setenv("TEST_INT_VALID", "42")
+		val := intEnv("TEST_INT_VALID", 10)
+		assert.Equal(t, 42, val)
+	})
+
+	t.Run("invalid integer falls back to default", func(t *testing.T) {
+		t.Setenv("TEST_INT_INVALID", "abc")
+		val := intEnv("TEST_INT_INVALID", 10)
+		assert.Equal(t, 10, val)
+	})
+
+	t.Run("unset falls back to default", func(t *testing.T) {
+		t.Setenv("TEST_INT_UNSET", "")
+		val := intEnv("TEST_INT_UNSET", 10)
+		assert.Equal(t, 10, val)
+	})
+}

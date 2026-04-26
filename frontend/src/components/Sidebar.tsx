@@ -4,17 +4,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useTheme } from './theme-provider.tsx'
 import type { Page, AgentSummary } from '../App.tsx'
+import { comingSoonPages } from '../App.tsx'
 
 interface NavItem { id: Page; label: string; tag: string; letter: string }
 
 const navItems: NavItem[] = [
+  { id: 'router',     label: 'Router',     tag: 'ATC',          letter: 'R' },
+  { id: 'agents',     label: 'Agents',     tag: 'FLEET',        letter: 'A' },
+  { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',  letter: 'K' },
   { id: 'overview',   label: 'Overview',   tag: 'TOWER VIEW',   letter: 'M' },
   { id: 'traces',     label: 'Traces',     tag: 'FLIGHT LOG',   letter: 'T' },
   { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',     letter: 'G' },
   { id: 'pii-vault',  label: 'PII Vault',  tag: 'CARGO',        letter: 'P' },
-  { id: 'router',     label: 'Router',     tag: 'ATC',          letter: 'R' },
-  { id: 'agents',     label: 'Agents',     tag: 'FLEET',        letter: 'A' },
-  { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',  letter: 'K' },
 ]
 
 interface SidebarProps {
@@ -78,17 +79,18 @@ export default function Sidebar({ current, onChange, agent, onAgentChange, tenan
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
           const active = current === item.id
+          const soon = comingSoonPages.has(item.id)
           return (
             <Button
               key={item.id}
               variant={active ? 'secondary' : 'ghost'}
-              className="w-full justify-start gap-3 h-auto py-2.5 px-3"
+              className={`w-full justify-start gap-3 h-auto py-2.5 px-3 ${soon ? 'opacity-60' : ''}`}
               onClick={() => onChange(item.id)}
             >
               <div className={`w-6 h-6 rounded flex items-center justify-center font-mono text-xs font-bold flex-shrink-0 ${active ? 'bg-primary/12 text-primary' : 'bg-muted text-muted-foreground'}`}>
                 {item.letter}
               </div>
-              <div className="text-left">
+              <div className="text-left flex-1">
                 <p className={`text-xs font-semibold leading-none mb-0.5 ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
                   {item.label}
                 </p>
@@ -96,6 +98,11 @@ export default function Sidebar({ current, onChange, agent, onAgentChange, tenan
                   {item.tag}
                 </p>
               </div>
+              {soon && (
+                <span className="font-mono text-[8px] tracking-widest text-muted-foreground/50 border border-muted-foreground/20 rounded px-1 py-0.5 leading-none">
+                  SOON
+                </span>
+              )}
             </Button>
           )
         })}

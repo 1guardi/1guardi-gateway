@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Sidebar from './components/Sidebar.tsx'
+import ComingSoon from './components/ComingSoon.tsx'
 import Overview from './pages/Overview.tsx'
 import Traces from './pages/Traces.tsx'
 import Guardrails from './pages/Guardrails.tsx'
@@ -12,6 +13,12 @@ import Agents from './pages/Agents.tsx'
 
 export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys'
 
+const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
+
+export const comingSoonPages: Set<Page> = COMING_SOON
+  ? new Set(['overview', 'traces', 'guardrails', 'pii-vault'])
+  : new Set()
+
 export interface AgentSummary {
   ID: number
   Name: string
@@ -20,7 +27,7 @@ export interface AgentSummary {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('overview')
+  const [page, setPage] = useState<Page>('router')
   const [selectedAgent, setSelectedAgent] = useState<string>('all')
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [tenantName, setTenantName] = useState<string>('—')
@@ -47,11 +54,14 @@ export default function App() {
       .catch(() => {})
   }, [])
 
+  const cs = (page: Page, label: string, tag: string, node: ReactNode) =>
+    comingSoonPages.has(page) ? <ComingSoon pageName={label} tag={tag} /> : node
+
   const pages: Record<Page, ReactNode> = {
-    overview:    <Overview selectedAgent={selectedAgent} />,
-    traces:      <Traces selectedAgent={selectedAgent} />,
-    guardrails:  <Guardrails selectedAgent={selectedAgent} />,
-    'pii-vault': <PiiVault selectedAgent={selectedAgent} />,
+    overview:    cs('overview',   'Overview',   'TOWER VIEW', <Overview selectedAgent={selectedAgent} />),
+    traces:      cs('traces',     'Traces',     'FLIGHT LOG', <Traces selectedAgent={selectedAgent} />),
+    guardrails:  cs('guardrails', 'Guardrails', 'AIRSPACE',   <Guardrails selectedAgent={selectedAgent} />),
+    'pii-vault': cs('pii-vault',  'PII Vault',  'CARGO',      <PiiVault selectedAgent={selectedAgent} />),
     router:      <Router selectedAgent={selectedAgent} />,
     agents:      <Agents tenantId={tenantId} agents={agents} onAgentCreated={() => tenantId && refreshAgents(tenantId)} />,
     'api-keys':  <APIKeys selectedAgent={selectedAgent} tenantId={tenantId} agents={agents} />,

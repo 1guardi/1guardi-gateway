@@ -12,18 +12,19 @@ const (
 	KeyLength = 32
 )
 
-// GenerateAPIKey generates a new API key and its hash.
+// GenerateAPIKey generates a new API key, its hash, and its suffix.
 // Format: sk_[random_hex]
-func GenerateAPIKey() (string, string, error) {
+func GenerateAPIKey() (key string, hash string, suffix string, err error) {
 	bytes := make([]byte, KeyLength)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	key := fmt.Sprintf("%s_%s", KeyPrefix, hex.EncodeToString(bytes))
-	hash := HashKey(key)
+	key = fmt.Sprintf("%s_%s", KeyPrefix, hex.EncodeToString(bytes))
+	hash = HashKey(key)
+	suffix = key[len(key)-4:]
 
-	return key, hash, nil
+	return key, hash, suffix, nil
 }
 
 // HashKey returns the SHA-256 hash of the API key.

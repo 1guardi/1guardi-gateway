@@ -198,7 +198,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, hash, err := auth.GenerateAPIKey()
+	key, hash, suffix, err := auth.GenerateAPIKey()
 	if err != nil {
 		http.Error(w, "failed to generate key", http.StatusInternalServerError)
 		return
@@ -208,6 +208,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		Name:     req.Name,
 		KeyHash:  hash,
 		Prefix:   auth.KeyPrefix,
+		Suffix:   suffix,
 		TenantID: uint(tenantID),
 		AgentID:  req.AgentID,
 		IsActive: true,

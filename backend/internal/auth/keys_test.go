@@ -10,7 +10,7 @@ import (
 )
 
 func TestGenerateAPIKey(t *testing.T) {
-	key, hash, err := GenerateAPIKey()
+	key, hash, suffix, err := GenerateAPIKey()
 	assert.NoError(t, err)
 
 	// Verify key format
@@ -22,16 +22,19 @@ func TestGenerateAPIKey(t *testing.T) {
 	// Verify hash format
 	assert.Equal(t, 64, len(hash), "hash should be a 64-character hex string")
 
+	// Verify suffix
+	assert.Equal(t, key[len(key)-4:], suffix, "suffix should match last 4 chars of key")
+
 	// Verify that the hash matches the actual SHA-256 of the key
 	expectedHash := HashKey(key)
 	assert.Equal(t, expectedHash, hash, "returned hash should match HashKey output")
 }
 
 func TestGenerateAPIKey_Randomness(t *testing.T) {
-	key1, _, err := GenerateAPIKey()
+	key1, _, _, err := GenerateAPIKey()
 	assert.NoError(t, err)
 
-	key2, _, err := GenerateAPIKey()
+	key2, _, _, err := GenerateAPIKey()
 	assert.NoError(t, err)
 
 	assert.NotEqual(t, key1, key2, "generated keys should be unique")

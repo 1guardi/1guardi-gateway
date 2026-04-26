@@ -15,7 +15,7 @@ func SeedDefaultTenant(database *gorm.DB, upstreams []config.UpstreamConfig) err
 	var tenant Tenant
 	err := database.Where("name = ?", "default").First(&tenant).Error
 	if err == gorm.ErrRecordNotFound {
-		key, hash, err := auth.GenerateAPIKey()
+		key, hash, _, err := auth.GenerateAPIKey()
 		if err != nil {
 			return fmt.Errorf("seed: generate api key: %w", err)
 		}

@@ -32,6 +32,7 @@ type APIKey struct {
 	gorm.Model
 	KeyHash    string `gorm:"uniqueIndex;not null"`
 	Prefix     string `gorm:"not null"` // e.g. "sk_"
+	Suffix     string `gorm:"not null"` // Last 4 characters of the key
 	Name       string `gorm:"not null"`
 	TenantID   uint   `gorm:"not null;index"`
 	Tenant     Tenant

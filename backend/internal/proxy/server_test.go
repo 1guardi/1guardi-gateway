@@ -24,11 +24,12 @@ func TestAuthenticate(t *testing.T) {
 	tenant := db.Tenant{Name: "test-tenant"}
 	database.Create(&tenant)
 
-	rawKey, hash, _ := auth.GenerateAPIKey()
+	rawKey, hash, suffix, _ := auth.GenerateAPIKey()
 	apiKey := db.APIKey{
 		Name:     "test-key",
 		KeyHash:  hash,
 		Prefix:   auth.KeyPrefix,
+		Suffix:   suffix,
 		TenantID: tenant.ID,
 		IsActive: true,
 	}
@@ -59,9 +60,11 @@ func TestAuthenticate_ProjectKeyWithHeader(t *testing.T) {
 	tenant := db.Tenant{Name: "test-tenant"}
 	database.Create(&tenant)
 
-	rawKey, hash, _ := auth.GenerateAPIKey()
+	rawKey, hash, suffix, _ := auth.GenerateAPIKey()
 	apiKey := db.APIKey{
 		KeyHash:  hash,
+		Prefix:   auth.KeyPrefix,
+		Suffix:   suffix,
 		TenantID: tenant.ID,
 		IsActive: true,
 	}
@@ -93,10 +96,12 @@ func TestAuthenticate_ScopedKey(t *testing.T) {
 	agent := db.Agent{Name: "support", TenantID: tenant.ID}
 	database.Create(&agent)
 
-	rawKey, hash, _ := auth.GenerateAPIKey()
+	rawKey, hash, suffix, _ := auth.GenerateAPIKey()
 	agentID := agent.ID
 	apiKey := db.APIKey{
 		KeyHash:  hash,
+		Prefix:   auth.KeyPrefix,
+		Suffix:   suffix,
 		TenantID: tenant.ID,
 		AgentID:  &agentID,
 		IsActive: true,

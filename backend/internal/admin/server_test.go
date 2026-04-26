@@ -179,6 +179,8 @@ func TestKeyHandlers(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &keys)
 	assert.Len(t, keys, 1)
 	assert.Equal(t, "test-key", keys[0].Name)
+	assert.NotEmpty(t, keys[0].Suffix)
+	assert.Equal(t, 4, len(keys[0].Suffix))
 	assert.Empty(t, keys[0].KeyHash, "KeyHash should be hidden")
 
 	// Revoke Key

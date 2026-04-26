@@ -17,6 +17,7 @@ interface APIKeyVM {
   id: string
   name: string
   prefix: string
+  suffix: string
   tenantId: string
   agentId?: string
   lastUsed: string
@@ -29,6 +30,7 @@ function toVM(k: APIKeyResponse): APIKeyVM {
     id: String(k.ID),
     name: k.Name,
     prefix: k.Prefix,
+    suffix: k.Suffix,
     tenantId: String(k.TenantID),
     agentId: k.AgentID != null ? String(k.AgentID) : undefined,
     lastUsed: k.LastUsedAt ? new Date(k.LastUsedAt).toLocaleDateString() : 'Never',
@@ -250,7 +252,10 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                         <div className={`p-1 rounded ${key.isActive ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
                           <Key className="w-3 h-3" />
                         </div>
-                        <span className="font-bold text-foreground">{key.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-foreground">{key.name}</span>
+                          <span className="text-[10px] text-muted-foreground/60">{key.prefix}_...{key.suffix}</span>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>

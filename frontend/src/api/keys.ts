@@ -6,6 +6,7 @@ export interface APIKeyResponse {
   CreatedAt: string
   Name: string
   Prefix: string
+  Suffix: string
   TenantID: number
   AgentID: number | null
   LastUsedAt: string | null

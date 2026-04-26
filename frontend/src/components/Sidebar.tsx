@@ -3,7 +3,8 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sun, Moon, Monitor } from 'lucide-react'
 import { useTheme } from './theme-provider.tsx'
-import type { Page, AgentSummary } from '../App.tsx'
+import type { Page } from '../App.tsx'
+import type { AgentSummary } from '../api/agents.ts'
 import { comingSoonPages } from '../App.tsx'
 
 interface NavItem { id: Page; label: string; tag: string; letter: string }
@@ -12,6 +13,7 @@ const navItems: NavItem[] = [
   { id: 'router',     label: 'Router',     tag: 'ATC',          letter: 'R' },
   { id: 'agents',     label: 'Agents',     tag: 'FLEET',        letter: 'A' },
   { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',  letter: 'K' },
+  { id: 'upstreams',  label: 'Providers',  tag: 'UPSTREAM',     letter: 'U' },
   { id: 'overview',   label: 'Overview',   tag: 'TOWER VIEW',   letter: 'M' },
   { id: 'traces',     label: 'Traces',     tag: 'FLIGHT LOG',   letter: 'T' },
   { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',     letter: 'G' },

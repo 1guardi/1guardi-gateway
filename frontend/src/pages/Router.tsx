@@ -1,22 +1,9 @@
-import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { CIRCUIT_STYLES, scoreColor, quotaColor } from '@/lib/styles.ts'
-
-interface EndpointStatus {
-  id: string
-  label: string
-  model: string
-  ttft_p50_ms: number
-  ttft_p99_ms: number
-  avg_tps: number
-  error_rate: number
-  quota_used: number
-  circuit_state: 'CLOSED' | 'OPEN' | 'HALF-OPEN'
-  score: number
-}
+import { useRouterEndpoints } from '../api/router.ts'
 
 interface EndpointVM {
   id: string
@@ -31,30 +18,27 @@ interface EndpointVM {
   score: number
 }
 
-function toVM(e: EndpointStatus): EndpointVM {
+function toVM(e: any): EndpointVM {
   return {
-    id: e.id,
-    label: e.label,
-    model: e.model,
+    id: String(e.id || e.ID || ''),
+    label: e.label || String(e.ID || ''),
+    model: e.model || e.Model || '',
     ttftP50: e.ttft_p50_ms > 0 ? `${Math.round(e.ttft_p50_ms)}ms` : '—',
     ttftP99: e.ttft_p99_ms > 0 ? `${Math.round(e.ttft_p99_ms)}ms` : '—',
     avgTps:  e.avg_tps > 0    ? `${Math.round(e.avg_tps)}`         : '—',
-    errorRate: `${(e.error_rate * 100).toFixed(1)}%`,
-    quotaUsed: e.quota_used,
-    circuitState: e.circuit_state,
-    score: e.score,
+    errorRate: `${(e.error_rate * 100 || 0).toFixed(1)}%`,
+    quotaUsed: e.quota_used || 0,
+    circuitState: e.circuit_state || 'CLOSED',
+    score: e.score || 0,
   }
 }
 
-export default function Router({ selectedAgent }: { selectedAgent: string }) {
-  const [endpoints, setEndpoints] = useState<EndpointVM[]>([])
+export default function Router({ selectedAgent, tenantId }: { selectedAgent: string; tenantId: string | null }) {
+  const { data: rawEndpoints = [] } = useRouterEndpoints()
+  const endpoints = rawEndpoints
+    .filter((e) => !tenantId || String(e.tenant_id) === tenantId)
+    .map(toVM)
 
-  useEffect(() => {
-    fetch('/api/v1/router/endpoints')
-      .then((r) => r.json())
-      .then((data: EndpointStatus[]) => setEndpoints(data.map(toVM)))
-      .catch(() => {/* backend not running — leave empty */})
-  }, [])
   return (
     <div className="p-6 space-y-5 max-w-7xl">
       <div className="flex items-center justify-between h-14">

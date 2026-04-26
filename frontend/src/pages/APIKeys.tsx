@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Plus, Key, Copy, Shield, ShieldAlert, Trash2, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,22 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { AgentSummary } from '../App.tsx'
-
-interface APIKeyResponse {
-  ID: number
-  CreatedAt: string
-  Name: string
-  Prefix: string
-  TenantID: number
-  AgentID: number | null
-  LastUsedAt: string | null
-  IsActive: boolean
-}
-
-interface CreateKeyResponse extends APIKeyResponse {
-  key: string
-}
+import type { AgentSummary } from '../api/agents.ts'
+import { useAPIKeys, useCreateAPIKey, useDeleteAPIKey } from '../api/keys.ts'
+import type { APIKeyResponse } from '../api/keys.ts'
 
 interface APIKeyVM {
   id: string
@@ -57,20 +44,17 @@ interface APIKeysProps {
 }
 
 export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProps) {
-  const [keys, setKeys] = useState<APIKeyVM[]>([])
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyScope, setNewKeyScope] = useState<'project' | 'agent'>('project')
   const [newKeyAgentId, setNewKeyAgentId] = useState<string>('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-  useEffect(() => {
-    if (!tenantId) return
-    fetch(`/api/v1/tenants/${tenantId}/keys`)
-      .then((r) => r.json())
-      .then((data: APIKeyResponse[]) => setKeys(data.map(toVM)))
-      .catch(() => {})
-  }, [tenantId])
+  const { data: keysData = [] } = useAPIKeys(tenantId)
+  const keys = keysData.map(toVM)
+
+  const { mutate: createAPIKey } = useCreateAPIKey(tenantId)
+  const { mutate: deleteAPIKey } = useDeleteAPIKey(tenantId)
 
   const agentMap: Record<string, string> = Object.fromEntries(agents.map((a) => [String(a.ID), a.Name]))
 
@@ -82,29 +66,20 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
     if (!tenantId) return
     const body: { name: string; agent_id?: number } = { name: newKeyName || 'Untitled Key' }
     if (newKeyScope === 'agent' && newKeyAgentId) body.agent_id = Number(newKeyAgentId)
-    fetch(`/api/v1/tenants/${tenantId}/keys`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then((r) => r.json())
-      .then((data: CreateKeyResponse) => {
-        setKeys([toVM(data), ...keys])
+    
+    createAPIKey(body, {
+      onSuccess: (data) => {
         setCreatedKey(data.key)
         setNewKeyName('')
         setNewKeyScope('project')
         setNewKeyAgentId('')
-      })
-      .catch(() => {})
+      }
+    })
   }
 
   const handleRevoke = (id: string) => {
     if (!tenantId) return
-    fetch(`/api/v1/tenants/${tenantId}/keys/${id}`, { method: 'DELETE' })
-      .then((r) => {
-        if (r.ok) setKeys(keys.map(k => k.id === id ? { ...k, isActive: false } : k))
-      })
-      .catch(() => {})
+    deleteAPIKey(id)
   }
 
   return (

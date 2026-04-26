@@ -9,34 +9,33 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { AgentSummary } from '../App.tsx'
+import { useCreateAgent } from '../api/agents.ts'
+import type { AgentSummary } from '../api/agents.ts'
 
 interface AgentsProps {
   tenantId: string | null
   agents: AgentSummary[]
-  onAgentCreated: () => void
 }
 
-export default function Agents({ tenantId, agents, onAgentCreated }: AgentsProps) {
+export default function Agents({ tenantId, agents }: AgentsProps) {
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [isOpen, setIsOpen] = useState(false)
 
+  const { mutate: createAgent } = useCreateAgent(tenantId)
+
   const handleCreate = () => {
     if (!tenantId || !newName.trim()) return
-    fetch(`/api/v1/tenants/${tenantId}/agents`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName.trim(), description: newDesc.trim() }),
-    })
-      .then((r) => { if (r.ok) return r.json() })
-      .then(() => {
-        setNewName('')
-        setNewDesc('')
-        setIsOpen(false)
-        onAgentCreated()
-      })
-      .catch(() => {})
+    createAgent(
+      { name: newName.trim(), description: newDesc.trim() },
+      {
+        onSuccess: () => {
+          setNewName('')
+          setNewDesc('')
+          setIsOpen(false)
+        },
+      }
+    )
   }
 
   return (

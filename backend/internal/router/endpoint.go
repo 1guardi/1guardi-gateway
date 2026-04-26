@@ -161,11 +161,12 @@ func newEndpoint(cfg config.UpstreamConfig) *Endpoint {
 	return &Endpoint{cfg: cfg, signals: newSignals(), cb: &circuitBreaker{}}
 }
 
-func (e *Endpoint) BaseURL() string { return e.cfg.BaseURL }
-func (e *Endpoint) APIKey() string  { return e.cfg.APIKey }
-func (e *Endpoint) Model() string   { return e.cfg.Model }
-func (e *Endpoint) KeyID() string   { return e.cfg.KeyID }
-func (e *Endpoint) TenantID() uint  { return e.cfg.TenantID }
+func (e *Endpoint) BaseURL() string  { return e.cfg.BaseURL }
+func (e *Endpoint) APIKey() string   { return e.cfg.APIKey }
+func (e *Endpoint) Provider() string { return e.cfg.Provider }
+func (e *Endpoint) Model() string    { return e.cfg.Model }
+func (e *Endpoint) KeyID() string    { return e.cfg.KeyID }
+func (e *Endpoint) TenantID() uint   { return e.cfg.TenantID }
 
 func (e *Endpoint) Available() bool { return e.cb.available() }
 

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,14 +25,15 @@ func testServer() *Server {
 }
 
 // serverWithUpstream builds a Server whose router points at the given upstream URL.
-func serverWithUpstream(t *testing.T, upstreamURL, model string) *Server {
+func serverWithUpstream(t *testing.T, upstreamURL, model string, provider string) *Server {
 	t.Helper()
 	return &Server{
 		router: llmrouter.New([]config.UpstreamConfig{{
-			KeyID:   "test",
-			Model:   model,
-			BaseURL: upstreamURL,
-			APIKey:  "test-key",
+			KeyID:    "test",
+			Provider: provider,
+			Model:    model,
+			BaseURL:  upstreamURL,
+			APIKey:   "test-key",
 		}}),
 		httpClient: &http.Client{},
 	}
@@ -125,7 +127,7 @@ func TestHandleChatCompletions_NonStreaming(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	srv := serverWithUpstream(t, upstream.URL, "gpt-4o")
+	srv := serverWithUpstream(t, upstream.URL, "gpt-4o", "openai")
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", chatBody(t, nil))
 	rr := httptest.NewRecorder()
 
@@ -150,7 +152,7 @@ func TestHandleChatCompletions_Streaming(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	srv := serverWithUpstream(t, upstream.URL, "gpt-4o")
+	srv := serverWithUpstream(t, upstream.URL, "gpt-4o", "openai")
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", chatBody(t, map[string]interface{}{"stream": true}))
 	rr := httptest.NewRecorder()
 
@@ -169,7 +171,7 @@ func TestHandleChatCompletions_UpstreamNetError(t *testing.T) {
 	upstreamURL := upstream.URL
 	upstream.Close()
 
-	srv := serverWithUpstream(t, upstreamURL, "gpt-4o")
+	srv := serverWithUpstream(t, upstreamURL, "gpt-4o", "openai")
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", chatBody(t, nil))
 	rr := httptest.NewRecorder()
 
@@ -187,7 +189,7 @@ func TestHandleChatCompletions_Upstream5xx(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	srv := serverWithUpstream(t, upstream.URL, "gpt-4o")
+	srv := serverWithUpstream(t, upstream.URL, "gpt-4o", "openai")
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", chatBody(t, nil))
 	rr := httptest.NewRecorder()
 
@@ -196,6 +198,138 @@ func TestHandleChatCompletions_Upstream5xx(t *testing.T) {
 	// Gateway forwards the 5xx as-is.
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.Contains(t, rr.Body.String(), "server_error")
+}
+
+func TestHandleChatCompletions_AnthropicTranslation(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/messages", r.URL.Path)
+		assert.Equal(t, "ant-key", r.Header.Get("x-api-key"))
+
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		assert.Len(t, req.Messages, 1)
+		assert.Equal(t, "user", req.Messages[0].Role)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"id":"ant-1","usage":{"input_tokens":10,"output_tokens":5}}`)
+	}))
+	defer upstream.Close()
+
+	srv := &Server{
+		router: llmrouter.New([]config.UpstreamConfig{{
+			KeyID:    "test-ant",
+			Provider: "anthropic",
+			Model:    "claude-3",
+			BaseURL:  upstream.URL,
+			APIKey:   "ant-key",
+		}}),
+		httpClient: &http.Client{},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", chatBody(t, map[string]interface{}{"model": "claude-3"}))
+	rr := httptest.NewRecorder()
+
+	srv.handleChatCompletions(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+// ---- translation & extraction ----
+
+func TestBuildUpstreamRequest_Anthropic(t *testing.T) {
+	s := &Server{}
+	cfg := config.UpstreamConfig{
+		Provider: "anthropic",
+		Model:    "claude-3-sonnet",
+		BaseURL:  "https://api.anthropic.com",
+		APIKey:   "ant-key",
+	}
+	// Actually buildUpstreamRequest takes *llmrouter.Endpoint.
+	router := llmrouter.New([]config.UpstreamConfig{cfg})
+	e, _ := router.Pick(0, "claude-3-sonnet")
+
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	req, err := s.buildUpstreamRequest(context.Background(), e, "claude-3-sonnet", body)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "https://api.anthropic.com/v1/messages", req.URL.String())
+	assert.Equal(t, "ant-key", req.Header.Get("x-api-key"))
+	assert.Equal(t, "2023-06-01", req.Header.Get("anthropic-version"))
+
+	var anthropicReq struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		Stream bool `json:"stream"`
+	}
+	require.NoError(t, json.NewDecoder(req.Body).Decode(&anthropicReq))
+	assert.Len(t, anthropicReq.Messages, 1)
+	assert.Equal(t, "user", anthropicReq.Messages[0].Role)
+	assert.True(t, anthropicReq.Stream)
+}
+
+func TestBuildUpstreamRequest_Gemini(t *testing.T) {
+	s := &Server{}
+	cfg := config.UpstreamConfig{
+		Provider: "gemini",
+		Model:    "gemini-1.5-pro",
+		BaseURL:  "https://generativelanguage.googleapis.com",
+		APIKey:   "gem-key",
+	}
+	router := llmrouter.New([]config.UpstreamConfig{cfg})
+	e, _ := router.Pick(0, "gemini-1.5-pro")
+
+	body := []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}`)
+	req, err := s.buildUpstreamRequest(context.Background(), e, "gemini-1.5-pro", body)
+
+	assert.NoError(t, err)
+	assert.Contains(t, req.URL.String(), "streamGenerateContent")
+	assert.Contains(t, req.URL.String(), "key=gem-key")
+
+	var geminiReq struct {
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
+	}
+	require.NoError(t, json.NewDecoder(req.Body).Decode(&geminiReq))
+	assert.Len(t, geminiReq.Contents, 1)
+	assert.Equal(t, "user", geminiReq.Contents[0].Role)
+	assert.Equal(t, "hi", geminiReq.Contents[0].Parts[0].Text)
+}
+
+func TestExtractUsage_MultiProvider(t *testing.T) {
+	s := &Server{}
+
+	t.Run("anthropic", func(t *testing.T) {
+		body := []byte(`{"usage":{"input_tokens":10,"output_tokens":20}}`)
+		in, out := s.extractUsage("anthropic", body)
+		assert.Equal(t, 10, in)
+		assert.Equal(t, 20, out)
+	})
+
+	t.Run("gemini", func(t *testing.T) {
+		body := []byte(`{"usageMetadata":{"promptTokenCount":15,"candidatesTokenCount":25}}`)
+		in, out := s.extractUsage("gemini", body)
+		assert.Equal(t, 15, in)
+		assert.Equal(t, 25, out)
+	})
+
+	t.Run("openai", func(t *testing.T) {
+		body := []byte(`{"usage":{"prompt_tokens":5,"completion_tokens":5}}`)
+		in, out := s.extractUsage("openai", body)
+		assert.Equal(t, 5, in)
+		assert.Equal(t, 5, out)
+	})
 }
 
 // ---- proxySSE ----
@@ -207,8 +341,8 @@ func TestProxySSE_ParsesUsageAndForwardsChunks(t *testing.T) {
 			"data: [DONE]\n\n",
 	)
 	rr := httptest.NewRecorder()
-
-	ttft, input, output := proxySSE(rr, sseBody, time.Now())
+	s := &Server{}
+	ttft, input, output := s.proxySSE(rr, "openai", sseBody, time.Now())
 
 	assert.GreaterOrEqual(t, ttft, 0.0)
 	assert.Equal(t, 3, input)
@@ -222,7 +356,8 @@ func TestProxySSE_ParsesUsageAndForwardsChunks(t *testing.T) {
 
 func TestProxySSE_EmptyBody(t *testing.T) {
 	rr := httptest.NewRecorder()
-	ttft, input, output := proxySSE(rr, strings.NewReader(""), time.Now())
+	s := &Server{}
+	ttft, input, output := s.proxySSE(rr, "openai", strings.NewReader(""), time.Now())
 
 	assert.Equal(t, 0.0, ttft)
 	assert.Equal(t, 0, input)

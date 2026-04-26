@@ -269,18 +269,24 @@ func (s *Server) handleListUpstreams(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
 	var req struct {
-		KeyID   string `json:"key_id"`
-		Model   string `json:"model"`
-		BaseURL string `json:"base_url"`
-		APIKey  string `json:"api_key"`
+		KeyID    string `json:"key_id"`
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+		BaseURL  string `json:"base_url"`
+		APIKey   string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
+	if req.Provider == "" {
+		req.Provider = "openai"
+	}
+
 	up := db.Upstream{
 		KeyID:         req.KeyID,
+		Provider:      req.Provider,
 		ProviderModel: req.Model,
 		BaseURL:       req.BaseURL,
 		APIKey:        req.APIKey,
@@ -296,6 +302,7 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 	if s.llmRouter != nil {
 		s.llmRouter.Add(config.UpstreamConfig{
 			KeyID:    up.KeyID,
+			Provider: up.Provider,
 			Model:    up.ProviderModel,
 			BaseURL:  up.BaseURL,
 			APIKey:   up.APIKey,

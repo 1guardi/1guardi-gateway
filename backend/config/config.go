@@ -22,6 +22,7 @@ type Config struct {
 // Multiple entries with the same Model enable fallback routing.
 type UpstreamConfig struct {
 	KeyID    string // unique label, e.g. "openai-primary"
+	Provider string // e.g. "openai", "anthropic", "gemini"
 	Model    string // model name, e.g. "gpt-4o"
 	BaseURL  string // e.g. "https://api.openai.com"
 	APIKey   string
@@ -77,10 +78,11 @@ func loadUpstreams() []UpstreamConfig {
 			break
 		}
 		upstreams = append(upstreams, UpstreamConfig{
-			KeyID:   keyID,
-			Model:   os.Getenv(prefix + "MODEL"),
-			BaseURL: env(prefix+"BASE_URL", "https://api.openai.com"),
-			APIKey:  os.Getenv(prefix + "API_KEY"),
+			KeyID:    keyID,
+			Provider: env(prefix+"PROVIDER", "openai"),
+			Model:    os.Getenv(prefix + "MODEL"),
+			BaseURL:  env(prefix+"BASE_URL", "https://api.openai.com"),
+			APIKey:   os.Getenv(prefix + "API_KEY"),
 		})
 	}
 	return upstreams

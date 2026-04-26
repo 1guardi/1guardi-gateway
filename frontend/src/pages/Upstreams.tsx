@@ -7,12 +7,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useUpstreams, useCreateUpstream, useDeleteUpstream } from '../api/upstreams.ts'
 import type { UpstreamResponse } from '../api/upstreams.ts'
 
 interface UpstreamVM {
   id: string
   keyId: string
+  provider: string
   model: string
   baseUrl: string
   createdAt: string
@@ -22,6 +24,7 @@ function toVM(u: UpstreamResponse): UpstreamVM {
   return {
     id: String(u.ID),
     keyId: u.key_id,
+    provider: u.provider,
     model: u.model,
     baseUrl: u.base_url,
     createdAt: new Date(u.CreatedAt).toLocaleDateString(),
@@ -32,9 +35,17 @@ interface UpstreamsProps {
   tenantId: string | null
 }
 
+const PROVIDERS = [
+  { id: 'openai', name: 'OpenAI', defaultUrl: 'https://api.openai.com' },
+  { id: 'anthropic', name: 'Anthropic', defaultUrl: 'https://api.anthropic.com' },
+  { id: 'gemini', name: 'Gemini', defaultUrl: 'https://generativelanguage.googleapis.com' },
+  { id: 'openai-compatible', name: 'Custom (OpenAI Compatible)', defaultUrl: '' },
+]
+
 export default function Upstreams({ tenantId }: UpstreamsProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [newKeyID, setNewKeyID] = useState('')
+  const [newProvider, setNewProvider] = useState('openai')
   const [newModel, setNewModel] = useState('')
   const [newBaseURL, setNewBaseURL] = useState('https://api.openai.com')
   const [newAPIKey, setNewAPIKey] = useState('')
@@ -45,14 +56,23 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
   const { mutate: createUpstream } = useCreateUpstream(tenantId)
   const { mutate: deleteUpstream } = useDeleteUpstream(tenantId)
 
+  const handleProviderChange = (val: string) => {
+    setNewProvider(val)
+    const p = PROVIDERS.find((p) => p.id === val)
+    if (p && p.defaultUrl) {
+      setNewBaseURL(p.defaultUrl)
+    }
+  }
+
   const handleCreate = () => {
     if (!tenantId) return
     createUpstream(
-      { key_id: newKeyID, model: newModel, base_url: newBaseURL, api_key: newAPIKey },
+      { key_id: newKeyID, provider: newProvider, model: newModel, base_url: newBaseURL, api_key: newAPIKey },
       {
         onSuccess: () => {
           setIsCreateOpen(false)
           setNewKeyID('')
+          setNewProvider('openai')
           setNewModel('')
           setNewBaseURL('https://api.openai.com')
           setNewAPIKey('')
@@ -93,13 +113,28 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
                 <Input id="keyId" placeholder="e.g. openai-primary" value={newKeyID} onChange={(e) => setNewKeyID(e.target.value)} className="font-mono text-xs" />
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="provider" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Provider</Label>
+                <Select value={newProvider} onValueChange={handleProviderChange}>
+                  <SelectTrigger className="font-mono text-xs">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROVIDERS.map((p) => (
+                      <SelectItem key={p.id} value={p.id} className="font-mono text-xs">{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="model" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Model Name</Label>
                 <Input id="model" placeholder="e.g. gpt-4o" value={newModel} onChange={(e) => setNewModel(e.target.value)} className="font-mono text-xs" />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="baseUrl" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Base URL</Label>
-                <Input id="baseUrl" value={newBaseURL} onChange={(e) => setNewBaseURL(e.target.value)} className="font-mono text-xs" />
-              </div>
+              {newProvider === 'openai-compatible' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="baseUrl" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Base URL</Label>
+                  <Input id="baseUrl" value={newBaseURL} onChange={(e) => setNewBaseURL(e.target.value)} className="font-mono text-xs" />
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="apiKey" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">API Key</Label>
                 <Input id="apiKey" type="password" value={newAPIKey} onChange={(e) => setNewAPIKey(e.target.value)} className="font-mono text-xs" />
@@ -119,6 +154,7 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
             <TableHeader>
               <TableRow className="hover:bg-transparent border-b border-border/50">
                 <TableHead className="font-mono text-[10px] tracking-widest uppercase h-10">Identifier</TableHead>
+                <TableHead className="font-mono text-[10px] tracking-widest uppercase h-10">Provider</TableHead>
                 <TableHead className="font-mono text-[10px] tracking-widest uppercase h-10">Model</TableHead>
                 <TableHead className="font-mono text-[10px] tracking-widest uppercase h-10">Base URL</TableHead>
                 <TableHead className="font-mono text-[10px] tracking-widest uppercase h-10 text-right">Actions</TableHead>
@@ -134,6 +170,9 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
                     </div>
                   </TableCell>
                   <TableCell>
+                    <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wider">{u.provider}</Badge>
+                  </TableCell>
+                  <TableCell>
                     <Badge variant="outline" className="font-mono text-[10px] bg-muted/50">{u.model}</Badge>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{u.baseUrl}</TableCell>
@@ -146,7 +185,7 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
               ))}
               {upstreams.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="h-32 text-center">
+                  <TableCell colSpan={5} className="h-32 text-center">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
                       <Globe className="w-8 h-8 mb-2 opacity-20" />
                       <p className="font-mono text-xs">No provider keys configured</p>

@@ -79,6 +79,7 @@ func main() {
 	for i, u := range dbUpstreams {
 		upstreamConfigs[i] = config.UpstreamConfig{
 			KeyID:    u.KeyID,
+			Provider: u.Provider,
 			Model:    u.ProviderModel,
 			BaseURL:  u.BaseURL,
 			APIKey:   u.APIKey,

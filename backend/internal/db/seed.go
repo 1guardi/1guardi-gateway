@@ -52,6 +52,7 @@ func SeedDefaultTenant(database *gorm.DB, upstreams []config.UpstreamConfig) err
 		if err == gorm.ErrRecordNotFound {
 			up := Upstream{
 				KeyID:         u.KeyID,
+				Provider:      u.Provider,
 				ProviderModel: u.Model,
 				BaseURL:       u.BaseURL,
 				APIKey:        u.APIKey,

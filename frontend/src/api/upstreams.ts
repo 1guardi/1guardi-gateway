@@ -5,6 +5,7 @@ export interface UpstreamResponse {
   ID: number
   CreatedAt: string
   key_id: string
+  provider: string
   model: string
   base_url: string
   tenant_id: number
@@ -25,7 +26,7 @@ export function useCreateUpstream(tenantId: string | null) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (body: { key_id: string; model: string; base_url: string; api_key: string }) => {
+    mutationFn: async (body: { key_id: string; provider: string; model: string; base_url: string; api_key: string }) => {
       if (!tenantId) throw new Error('Tenant ID is required')
       const { data } = await apiClient.post(`/tenants/${tenantId}/upstreams`, body)
       return data

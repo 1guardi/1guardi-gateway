@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -150,14 +151,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Build and send upstream request.
-	upstreamURL := strings.TrimRight(endpoint.BaseURL(), "/") + "/v1/chat/completions"
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upstreamURL, bytes.NewReader(forwardBody))
+	upstreamReq, err := s.buildUpstreamRequest(r.Context(), endpoint, model, forwardBody)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to build upstream request", "api_error")
+		writeError(w, http.StatusInternalServerError, err.Error(), "api_error")
 		return
 	}
-	upstreamReq.Header.Set("Authorization", "Bearer "+endpoint.APIKey())
-	upstreamReq.Header.Set("Content-Type", "application/json")
 
 	start := time.Now()
 	resp, err := s.httpClient.Do(upstreamReq)
@@ -169,10 +167,8 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	// 5. Copy upstream response headers.
-	for k, vs := range resp.Header {
-		for _, v := range vs {
-			w.Header().Add(k, v)
-		}
+	for k, v := range resp.Header {
+		w.Header()[k] = v
 	}
 	w.WriteHeader(resp.StatusCode)
 
@@ -184,15 +180,11 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if streaming {
-		ttftMS, inputTokens, outputTokens = proxySSE(w, resp.Body, start)
+		ttftMS, inputTokens, outputTokens = s.proxySSE(w, endpoint.Provider(), resp.Body, start)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		ttftMS = float64(time.Since(start).Milliseconds())
-		var result chatResponse
-		if json.Unmarshal(body, &result) == nil {
-			inputTokens = result.Usage.PromptTokens
-			outputTokens = result.Usage.CompletionTokens
-		}
+		inputTokens, outputTokens = s.extractUsage(endpoint.Provider(), body)
 		w.Write(body) //nolint:errcheck — client disconnect is non-fatal
 	}
 
@@ -224,7 +216,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 // proxySSE streams an SSE response to w, returning TTFT ms and token counts from
 // the final usage chunk.
-func proxySSE(w http.ResponseWriter, body io.Reader, start time.Time) (ttftMS float64, inputTokens, outputTokens int) {
+func (s *Server) proxySSE(w http.ResponseWriter, provider string, body io.Reader, start time.Time) (ttftMS float64, inputTokens, outputTokens int) {
 	const maxSSELine = 1 << 20 // 1MB per line max
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, maxSSELine), maxSSELine)
@@ -236,7 +228,7 @@ func proxySSE(w http.ResponseWriter, body io.Reader, start time.Time) (ttftMS fl
 		line := scanner.Text()
 
 		// Record TTFT on the first data line.
-		if !firstToken && strings.HasPrefix(line, "data: ") {
+		if !firstToken && (strings.HasPrefix(line, "data: ") || strings.HasPrefix(line, "event: ")) {
 			ttftMS = float64(time.Since(start).Milliseconds())
 			firstToken = true
 		}
@@ -260,6 +252,153 @@ func proxySSE(w http.ResponseWriter, body io.Reader, start time.Time) (ttftMS fl
 	}
 
 	return ttftMS, inputTokens, outputTokens
+}
+
+type openAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAIRequest struct {
+	Model    string          `json:"model"`
+	Messages []openAIMessage `json:"messages"`
+	Stream   bool            `json:"stream"`
+}
+
+// buildUpstreamRequest constructs the final request to the provider.
+// It handles translation from OpenAI format to provider-native formats.
+func (s *Server) buildUpstreamRequest(ctx context.Context, endpoint *llmrouter.Endpoint, model string, body []byte) (*http.Request, error) {
+	var (
+		url         string
+		headers     = make(http.Header)
+		forwardBody = body
+	)
+
+	baseURL := strings.TrimRight(endpoint.BaseURL(), "/")
+
+	switch endpoint.Provider() {
+	case "anthropic":
+		url = baseURL + "/v1/messages"
+		headers.Set("x-api-key", endpoint.APIKey())
+		headers.Set("anthropic-version", "2023-06-01")
+
+		// Translate OpenAI -> Anthropic
+		var oai openAIRequest
+		if err := json.Unmarshal(body, &oai); err == nil {
+			type anthropicMsg struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			}
+			type anthropicReq struct {
+				Model     string         `json:"model"`
+				Messages  []anthropicMsg `json:"messages"`
+				MaxTokens int            `json:"max_tokens,omitempty"`
+				System    string         `json:"system,omitempty"`
+				Stream    bool           `json:"stream"`
+			}
+			req := anthropicReq{
+				Model:     endpoint.Model(),
+				MaxTokens: 4096, // required by Anthropic
+				Stream:    oai.Stream,
+			}
+			for _, m := range oai.Messages {
+				if m.Role == "system" {
+					req.System = m.Content
+				} else {
+					req.Messages = append(req.Messages, anthropicMsg{
+						Role:    m.Role,
+						Content: m.Content,
+					})
+				}
+			}
+			forwardBody, _ = json.Marshal(req)
+		}
+
+	case "gemini":
+		method := "generateContent"
+		var oai openAIRequest
+		if err := json.Unmarshal(body, &oai); err == nil && oai.Stream {
+			method = "streamGenerateContent"
+		}
+		url = fmt.Sprintf("%s/v1beta/models/%s:%s?key=%s", baseURL, endpoint.Model(), method, endpoint.APIKey())
+
+		// Translate OpenAI -> Gemini
+		if err := json.Unmarshal(body, &oai); err == nil {
+			type geminiPart struct {
+				Text string `json:"text"`
+			}
+			type geminiContent struct {
+				Role  string       `json:"role"`
+				Parts []geminiPart `json:"parts"`
+			}
+			type geminiReq struct {
+				Contents []geminiContent `json:"contents"`
+			}
+			req := geminiReq{}
+			for _, m := range oai.Messages {
+				role := m.Role
+				if role == "assistant" {
+					role = "model"
+				}
+				if role == "system" {
+					role = "user" // Simple fallback
+				}
+				req.Contents = append(req.Contents, geminiContent{
+					Role:  role,
+					Parts: []geminiPart{{Text: m.Content}},
+				})
+			}
+			forwardBody, _ = json.Marshal(req)
+		}
+
+	default:
+		// OpenAI or OpenAI-compatible
+		url = baseURL + "/v1/chat/completions"
+		headers.Set("Authorization", "Bearer "+endpoint.APIKey())
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(forwardBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build request: %w", err)
+	}
+
+	for k, v := range headers {
+		req.Header[k] = v
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	return req, nil
+}
+
+func (s *Server) extractUsage(provider string, body []byte) (int, int) {
+	switch provider {
+	case "anthropic":
+		var res struct {
+			Usage struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(body, &res) == nil {
+			return res.Usage.InputTokens, res.Usage.OutputTokens
+		}
+	case "gemini":
+		var res struct {
+			UsageMetadata struct {
+				PromptTokenCount     int `json:"promptTokenCount"`
+				CandidatesTokenCount int `json:"candidatesTokenCount"`
+			} `json:"usageMetadata"`
+		}
+		if json.Unmarshal(body, &res) == nil {
+			return res.UsageMetadata.PromptTokenCount, res.UsageMetadata.CandidatesTokenCount
+		}
+	default:
+		var result chatResponse
+		if json.Unmarshal(body, &result) == nil {
+			return result.Usage.PromptTokens, result.Usage.CompletionTokens
+		}
+	}
+	return 0, 0
 }
 
 // handleCompletions handles POST /v1/completions (legacy).

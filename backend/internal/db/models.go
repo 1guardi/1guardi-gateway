@@ -45,13 +45,13 @@ type APIKey struct {
 // Upstream represents an LLM provider endpoint.
 type Upstream struct {
 	gorm.Model
-	KeyID         string `gorm:"not null;index" json:"key_id"`
-	Provider      string `gorm:"not null;default:'openai'" json:"provider"`
-	ProviderModel string `gorm:"not null" json:"model"`
-	BaseURL       string `gorm:"not null" json:"base_url"`
-	APIKey        string `gorm:"not null" json:"-"` // Never export API Key
-	TenantID      uint   `gorm:"not null;index" json:"tenant_id"`
-	Tenant        Tenant `gorm:"-" json:"-"`
+	KeyID    string `gorm:"not null;index" json:"key_id"`
+	Provider string `gorm:"not null;default:'openai'" json:"provider"`
+	Models   string `gorm:"not null" json:"models"` // Comma-separated list of models
+	BaseURL  string `gorm:"not null" json:"base_url"`
+	APIKey   string `gorm:"not null" json:"-"` // Never export API Key
+	TenantID uint   `gorm:"not null;index" json:"tenant_id"`
+	Tenant   Tenant `gorm:"-" json:"-"`
 }
 
 // AutoMigrate runs schema migrations for all models.

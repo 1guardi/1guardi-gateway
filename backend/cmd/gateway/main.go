@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/admin"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/proxy"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/telemetry"
@@ -69,21 +71,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	modelsSvc := providers.NewModelProviderService(redisCache)
+
 	// Load all upstreams from DB to initialize the router
 	var dbUpstreams []db.Upstream
 	if err := database.Find(&dbUpstreams).Error; err != nil {
 		slog.Error("failed to load upstreams from db", "err", err)
 		os.Exit(1)
 	}
-	upstreamConfigs := make([]config.UpstreamConfig, len(dbUpstreams))
-	for i, u := range dbUpstreams {
-		upstreamConfigs[i] = config.UpstreamConfig{
-			KeyID:    u.KeyID,
-			Provider: u.Provider,
-			Model:    u.ProviderModel,
-			BaseURL:  u.BaseURL,
-			APIKey:   u.APIKey,
-			TenantID: u.TenantID,
+	var upstreamConfigs []config.UpstreamConfig
+	for _, u := range dbUpstreams {
+		// Split models and register each as a separate upstream config
+		models := strings.Split(u.Models, ",")
+		for _, model := range models {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			upstreamConfigs = append(upstreamConfigs, config.UpstreamConfig{
+				KeyID:    u.KeyID,
+				Provider: u.Provider,
+				Model:    model,
+				BaseURL:  u.BaseURL,
+				APIKey:   u.APIKey,
+				TenantID: u.TenantID,
+			})
 		}
 	}
 
@@ -101,7 +113,7 @@ func main() {
 	}
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.NewRouter(cfg, database, router),
+		Handler:      admin.NewRouter(cfg, database, router, redisCache, modelsSvc),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

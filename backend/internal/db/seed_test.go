@@ -56,7 +56,7 @@ func TestSeedDefaultTenant_WithUpstreams(t *testing.T) {
 	database.Find(&ups)
 	require.Len(t, ups, 1)
 	assert.Equal(t, "test-ups-1", ups[0].KeyID)
-	assert.Equal(t, "gpt-4o", ups[0].ProviderModel)
+	assert.Equal(t, "gpt-4o", ups[0].Models)
 
 	// Idempotent test
 	err = SeedDefaultTenant(database, upstreams)

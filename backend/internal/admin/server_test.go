@@ -30,7 +30,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 func TestTenantHandlers(t *testing.T) {
 	database := setupTestDB(t)
 	cfg := &config.Config{}
-	router := NewRouter(cfg, database, nil)
+	router := NewRouter(cfg, database, nil, nil, nil)
 
 	// 1. Create a tenant
 	newTenant := db.Tenant{
@@ -70,7 +70,7 @@ func TestTenantHandlers(t *testing.T) {
 func TestHandleReady(t *testing.T) {
 	database := setupTestDB(t)
 	cfg := &config.Config{}
-	router := NewRouter(cfg, database, nil)
+	router := NewRouter(cfg, database, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	rr := httptest.NewRecorder()
@@ -87,7 +87,7 @@ func TestHandleReady(t *testing.T) {
 
 func TestHandleListEndpoints_NilRouter(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil)
+	router := NewRouter(&config.Config{}, database, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil)
 	rr := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 	r := llmrouter.New([]config.UpstreamConfig{
 		{KeyID: "openai-primary", Model: "gpt-4o", BaseURL: "https://api.openai.com", APIKey: "sk-test"},
 	})
-	handler := NewRouter(&config.Config{}, database, r)
+	handler := NewRouter(&config.Config{}, database, r, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil)
 	rr := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 
 func TestAgentHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil)
+	router := NewRouter(&config.Config{}, database, nil, nil, nil)
 
 	// Setup Tenant
 	tenant := db.Tenant{Name: "tenant1"}
@@ -150,7 +150,7 @@ func TestAgentHandlers(t *testing.T) {
 
 func TestKeyHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil)
+	router := NewRouter(&config.Config{}, database, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
@@ -197,7 +197,7 @@ func TestKeyHandlers(t *testing.T) {
 func TestUpstreamHandlers(t *testing.T) {
 	database := setupTestDB(t)
 	r := llmrouter.New([]config.UpstreamConfig{})
-	router := NewRouter(&config.Config{}, database, r)
+	router := NewRouter(&config.Config{}, database, r, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
@@ -220,6 +220,17 @@ func TestUpstreamHandlers(t *testing.T) {
 	assert.Len(t, upstreams, 1)
 	assert.Equal(t, "test-ups", upstreams[0].KeyID)
 
+	// Update Upstream
+	updateBody := `{"provider":"openai","models":["gpt-4o","gpt-4o-mini"],"base_url":"https://api.openai.com"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/tenants/1/upstreams/test-ups", bytes.NewBufferString(updateBody))
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var updated db.Upstream
+	json.Unmarshal(rr.Body.Bytes(), &updated)
+	assert.Equal(t, "gpt-4o,gpt-4o-mini", updated.Models)
+
 	// Delete Upstream
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/upstreams/test-ups", nil)
 	rr = httptest.NewRecorder()
@@ -229,7 +240,7 @@ func TestUpstreamHandlers(t *testing.T) {
 
 func TestNotImplementedAdminHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil)
+	router := NewRouter(&config.Config{}, database, nil, nil, nil)
 
 	endpoints := []struct {
 		method string

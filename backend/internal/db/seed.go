@@ -51,12 +51,12 @@ func SeedDefaultTenant(database *gorm.DB, upstreams []config.UpstreamConfig) err
 		err := database.Where("tenant_id = ? AND key_id = ?", tenant.ID, u.KeyID).First(&existing).Error
 		if err == gorm.ErrRecordNotFound {
 			up := Upstream{
-				KeyID:         u.KeyID,
-				Provider:      u.Provider,
-				ProviderModel: u.Model,
-				BaseURL:       u.BaseURL,
-				APIKey:        u.APIKey,
-				TenantID:      tenant.ID,
+				KeyID:    u.KeyID,
+				Provider: u.Provider,
+				Models:   u.Model, // u.Model from config is a single model, store it as initial model
+				BaseURL:  u.BaseURL,
+				APIKey:   u.APIKey,
+				TenantID: tenant.ID,
 			}
 			if err := database.Create(&up).Error; err != nil {
 				slog.Error("failed to seed upstream", "key_id", u.KeyID, "err", err)

@@ -2,8 +2,10 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,7 +15,9 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
+	"github.com/redis/go-redis/v9"
 )
 
 // Server holds dependencies for the admin API.
@@ -21,16 +25,20 @@ type Server struct {
 	db        *gorm.DB
 	cfg       *config.Config
 	llmRouter *llmrouter.Router
+	redis     *redis.Client
+	modelsSvc *providers.ModelProviderService
 }
 
 // NewRouter builds the internal admin API handler.
 // This port should never be exposed publicly — bind to 127.0.0.1 in production
 // or keep it cluster-internal in Kubernetes.
-func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc *providers.ModelProviderService) http.Handler {
 	srv := &Server{
 		db:        database,
 		cfg:       cfg,
 		llmRouter: llmRouter,
+		redis:     redis,
+		modelsSvc: modelsSvc,
 	}
 
 	mux := chi.NewRouter()
@@ -44,6 +52,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 
 	mux.Route("/api/v1", func(r chi.Router) {
 		r.Get("/router/endpoints", srv.handleListEndpoints)
+		r.Get("/providers/{provider}/models", srv.handleListProviderModels)
 
 		r.Get("/tenants", srv.handleListTenants)
 		r.Post("/tenants", srv.handleCreateTenant)
@@ -62,6 +71,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 
 			r.Get("/upstreams", srv.handleListUpstreams)
 			r.Post("/upstreams", srv.handleCreateUpstream)
+			r.Put("/upstreams/{keyID}", srv.handleUpdateUpstream)
 			r.Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
 		})
 	})
@@ -77,6 +87,46 @@ func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.llmRouter.List())
+}
+
+func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	apiKey := r.URL.Query().Get("apiKey")
+	tenantIDStr := r.URL.Query().Get("tenantID")
+	upstreamKeyID := r.URL.Query().Get("upstreamKeyID")
+
+	// Fallback to database key if tenant and key ID are provided
+	if apiKey == "" && tenantIDStr != "" && upstreamKeyID != "" {
+		tid, _ := strconv.Atoi(tenantIDStr)
+		var up db.Upstream
+		if err := s.db.Where("tenant_id = ? AND key_id = ?", tid, upstreamKeyID).First(&up).Error; err == nil {
+			apiKey = up.APIKey
+		}
+	}
+
+	// Fallback to default API key from config if still not found
+	if apiKey == "" {
+		for _, u := range s.cfg.Upstreams {
+			if u.Provider == provider && u.APIKey != "" {
+				apiKey = u.APIKey
+				break
+			}
+		}
+	}
+
+	if apiKey == "" {
+		http.Error(w, "API key required and no default found", http.StatusBadRequest)
+		return
+	}
+
+	models, err := s.modelsSvc.GetModels(r.Context(), provider, apiKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to fetch models: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models)
 }
 
 type healthResponse struct {
@@ -269,11 +319,12 @@ func (s *Server) handleListUpstreams(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
 	var req struct {
-		KeyID    string `json:"key_id"`
-		Provider string `json:"provider"`
-		Model    string `json:"model"`
-		BaseURL  string `json:"base_url"`
-		APIKey   string `json:"api_key"`
+		KeyID    string   `json:"key_id"`
+		Provider string   `json:"provider"`
+		Models   []string `json:"models"` // Changed to slice
+		Model    string   `json:"model"`  // Keep for backward compatibility
+		BaseURL  string   `json:"base_url"`
+		APIKey   string   `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -284,13 +335,23 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 		req.Provider = "openai"
 	}
 
+	// Support both single model and models array
+	if len(req.Models) == 0 && req.Model != "" {
+		req.Models = []string{req.Model}
+	}
+
+	if len(req.Models) == 0 {
+		http.Error(w, "at least one model is required", http.StatusBadRequest)
+		return
+	}
+
 	up := db.Upstream{
-		KeyID:         req.KeyID,
-		Provider:      req.Provider,
-		ProviderModel: req.Model,
-		BaseURL:       req.BaseURL,
-		APIKey:        req.APIKey,
-		TenantID:      uint(tenantID),
+		KeyID:    req.KeyID,
+		Provider: req.Provider,
+		Models:   strings.Join(req.Models, ","),
+		BaseURL:  req.BaseURL,
+		APIKey:   req.APIKey,
+		TenantID: uint(tenantID),
 	}
 
 	if err := s.db.Create(&up).Error; err != nil {
@@ -298,20 +359,81 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update live router
+	// Update live router with each model
 	if s.llmRouter != nil {
-		s.llmRouter.Add(config.UpstreamConfig{
-			KeyID:    up.KeyID,
-			Provider: up.Provider,
-			Model:    up.ProviderModel,
-			BaseURL:  up.BaseURL,
-			APIKey:   up.APIKey,
-			TenantID: up.TenantID,
-		})
+		for _, model := range req.Models {
+			s.llmRouter.Add(config.UpstreamConfig{
+				KeyID:    up.KeyID,
+				Provider: up.Provider,
+				Model:    model,
+				BaseURL:  up.BaseURL,
+				APIKey:   up.APIKey,
+				TenantID: up.TenantID,
+			})
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(up)
+}
+
+func (s *Server) handleUpdateUpstream(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	keyID := chi.URLParam(r, "keyID")
+
+	var req struct {
+		Provider string   `json:"provider"`
+		Models   []string `json:"models"`
+		BaseURL  string   `json:"base_url"`
+		APIKey   string   `json:"api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var up db.Upstream
+	if err := s.db.Where("tenant_id = ? AND key_id = ?", tenantID, keyID).First(&up).Error; err != nil {
+		http.Error(w, "upstream not found", http.StatusNotFound)
+		return
+	}
+
+	// Update fields
+	if req.Provider != "" {
+		up.Provider = req.Provider
+	}
+	if len(req.Models) > 0 {
+		up.Models = strings.Join(req.Models, ",")
+	}
+	if req.BaseURL != "" {
+		up.BaseURL = req.BaseURL
+	}
+	if req.APIKey != "" {
+		up.APIKey = req.APIKey
+	}
+
+	if err := s.db.Save(&up).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Update live router: remove old and add new
+	if s.llmRouter != nil {
+		s.llmRouter.Remove(uint(tenantID), keyID)
+		for _, model := range req.Models {
+			s.llmRouter.Add(config.UpstreamConfig{
+				KeyID:    up.KeyID,
+				Provider: up.Provider,
+				Model:    model,
+				BaseURL:  up.BaseURL,
+				APIKey:   up.APIKey,
+				TenantID: up.TenantID,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(up)
 }
 

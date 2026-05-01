@@ -52,6 +52,7 @@ Thread  (gen_ai.thread.id, gen_ai.user.id, gen_ai.session.id)
 
 - Token throughput per model (counter)
 - TTFT — P50/P99 histogram
+- **Spend tracking (counter):** USD cost aggregated by User ID, Agent ID, Model, and Tenant.
 - Cost per agent per hour (gauge)
 - Guardrail fire rate by rule (counter)
 - Cache hit rate (gauge)
@@ -152,6 +153,7 @@ Rule {
 - Topic restriction (off-topic for agent purpose)
 - Tool call parameter anomaly (e.g., SQL injection in arguments)
 - Knowledge grounding (output makes claims not in retrieved context)
+- **API Secret Exposure Prevention:** Scan for leaked credentials, API keys, and tokens (e.g., AWS, GitHub, Stripe) in both inbound prompts and outbound LLM responses.
 
 **Custom guardrails:**
 
@@ -173,7 +175,7 @@ Rule {
 
 ---
 
-### 4. PII Masking
+### 4. PII Masking & Redaction
 
 **Detection pipeline (hybrid):**
 
@@ -189,6 +191,11 @@ Rule {
 - Full name, Date of birth
 - Address (street, city, postal code)
 - Custom entity types (tenant-defined patterns)
+
+**Actions:**
+- **Masking:** Replace with a deterministic token (e.g., `[PII_EMAIL_1]`).
+- **Redaction:** Completely remove the entity (e.g., `[REDACTED]`).
+- **Anonymization:** Replace with a fake but realistic value (deferred to v2).
 
 **Bidirectional masking flow:**
 
@@ -245,7 +252,7 @@ When `pii_response_mode: tokens` is set, the response includes a `pii_map` along
 
 ### 5. Document Security
 
-All documents ingested by an agent — uploaded by users, fetched from external sources, or passed as tool call results — pass through a two-stage security pipeline before content is extracted and forwarded to the LLM.
+All documents ingested by an agent — uploaded by users, fetched from external sources, or passed as tool call results — pass through a three-stage security pipeline before content is extracted and forwarded to the LLM.
 
 **Supported document types:**
 
@@ -254,16 +261,17 @@ All documents ingested by an agent — uploaded by users, fetched from external 
 - Images (PNG, JPEG, WEBP — for vision-capable models)
 - HTML, XML, JSON
 
-**Two-stage inspection pipeline:**
+**Three-stage inspection pipeline:**
 
 ```
-Inbound document
+Inbound document / Tool call result
   └── Stage 1: ClamAV scan (signature-based malware detection)
-        └── [clean] Stage 2: LLM payload inspector (semantic threat analysis)
-              └── [safe] Extract content → forward to agent LLM
+        └── [clean] Stage 2: VirusTotal Analysis (multi-engine file/URL reputation)
+              └── [clean] Stage 3: LLM payload inspector (semantic threat analysis)
+                    └── [safe] Extract content → forward to agent LLM
 ```
 
-Each stage is a gate: a document that fails either stage is blocked and never reaches the LLM. The rejection reason is logged as a guardrail event in the OTel trace.
+Each stage is a gate: a document that fails any stage is blocked and never reaches the LLM. The rejection reason is logged as a guardrail event in the OTel trace.
 
 ---
 
@@ -294,7 +302,24 @@ ClamAV runs as a sidecar service (or shared cluster daemon in SaaS). Every docum
 
 ---
 
-#### Stage 2 — LLM Payload Inspector (Semantic)
+#### Stage 2 — VirusTotal Integration
+
+For tool calls that return external URLs or files, the gateway performs a reputation check via the VirusTotal API. This ensures that agents do not process content from known malicious sources.
+
+**What it catches:**
+- Malicious URLs returned by tools (e.g., search results, scraping targets)
+- Known malicious file hashes not yet in local ClamAV signatures
+- Command & Control (C2) domains and phishing sites
+
+**VirusTotal span attributes (OTel):**
+- `doc.vt.engine` — `virustotal`
+- `doc.vt.malicious_count` — number of engines flagging the resource
+- `doc.vt.verdict` — `clean | malicious | suspicious`
+- `doc.vt.duration_ms` — API latency
+
+---
+
+#### Stage 3 — LLM Payload Inspector (Semantic)
 
 A dedicated small LLM (separate from the agent's primary model) performs semantic analysis of the extracted document content. This catches threats that signature scanning cannot: prompt injection attacks embedded in document text, social engineering payloads, and instruction smuggling.
 
@@ -342,13 +367,15 @@ The full document inspection is recorded as a child span under the parent trace,
 Trace (user turn)
   └── Span: document_ingest
         ├── Span: clamav_scan        (stage 1)
-        └── Span: llm_inspector      (stage 2)
+        ├── Span: vt_analysis         (stage 2)
+        └── Span: llm_inspector      (stage 3)
 ```
 
 **Failure handling:**
 
-- If ClamAV is unavailable (service down, timeout), the default behaviour is `fail-closed` — document is blocked and an error span is emitted. Tenants can configure `fail-open` for non-critical workflows, with a mandatory `doc.scan.result: skipped` tag.
-- If the LLM inspector is unavailable, same fail-closed default applies. Both stages must pass for the document to proceed.
+- If ClamAV is unavailable (service down, timeout), the default behaviour is `fail-closed` — document is blocked and an error span is emitted.
+- If VirusTotal or the LLM inspector is unavailable, same fail-closed default applies. All three stages must pass for the document to proceed.
+- Tenants can configure `fail-open` for non-critical workflows, with a mandatory `doc.scan.result: skipped` tag.
 
 ---
 
@@ -384,6 +411,32 @@ For richer semantic context — agent graph structure, tool schemas, span metada
 - Tool call interception for guardrail and masking hooks
 - Agent-level cache key construction (model + system prompt hash + tool schema)
 - Async span continuation helpers for long-running jobs
+
+---
+
+### 6. User & Access Management
+
+To support environments where individual users act as agents or require their own credentials, the gateway provides a robust identity layer.
+
+**User as Agent:**
+- Users can be added manually or imported via HRMS integrations (e.g., Workday, BambooHR).
+- Every user is assigned a unique `Agent ID` for policy enforcement and tracing.
+- **Auto-Revocation:** API keys and access are automatically revoked when a user is deactivated or removed in the source HRMS.
+- **Detailed Spend Tracking:** Real-time visibility into USD spend across individual users and agents.
+- Cost and token usage are tracked at the individual user level, enabling department-level chargebacks.
+
+**Self-Service API Keys:**
+- Portal for users to generate their own API keys.
+- Tenant admins can set granular quotas and rate limits per user key.
+- **Rate Limiting Dimensions:**
+  - **RPM / RPD:** Requests Per Minute and Requests Per Day.
+  - **TPM / TPD:** Tokens Per Minute and Tokens Per Day.
+  - **TPS:** Tokens Per Second (peak throughput enforcement for streaming).
+- **Enforcement Logic:** Hard limits return `429 Too Many Requests`; soft limits trigger observability alerts.
+
+**Network Security:**
+- **IP Restricting:** API keys can be bound to specific IP addresses or CIDR blocks.
+- Requests originating from unauthorized IPs are rejected with a `403 Forbidden`.
 
 ---
 
@@ -425,11 +478,17 @@ Physical isolation options:
 | Token, latency, cost tracking | Cost derived post-hoc from pricing table |
 | LLM fallback (TTFT + TPS signals) | No load balancing yet |
 | Guardrails engine | Parallel mode; managed + custom (script-based) |
-| PII masking — regex | Structural + text content; bidirectional |
+| Secret Detection Guardrail | Prevents exposure of API keys/tokens |
+| PII masking & redaction | Structural + text content; bidirectional |
 | PII masking — NER | Hybrid pipeline; spaCy baseline |
 | Session vault | Redis-backed; ephemeral per conversation |
+| Spend Tracking | Aggregate USD cost by User, Agent, and Model |
+| Rate Limiting | Multi-dimensional (TPS, TPM, RPM, RPD) enforcement |
+| User & Access Management | HRMS import/sync, manual users, auto-revocation, IP-restricted keys |
+| Self-service API keys | Users can generate and manage their own keys |
 | Async span support | Durable span buffer for long-running jobs |
 | Document security — ClamAV | Signature-based scan; fail-closed by default |
+| Document security — VirusTotal | Reputation check for tool call URLs/files |
 | Document security — LLM inspector | Semantic payload analysis; verdict caching |
 | Multi-tenancy | Logical isolation; shared infrastructure |
 | Self-hosted packaging | Docker Compose at minimum |

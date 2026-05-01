@@ -49,7 +49,7 @@ services:
       POSTGRES_PASSWORD: gateway
       POSTGRES_DB: gateway
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql/data
     ports:
       - "6432:5432"   # exposed for local tooling (psql, Postico, etc.)
     deploy:

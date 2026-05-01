@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Plus, Key, Trash2, Globe, Shield, Check, ChevronsUpDown, Search, Edit2 } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Key, Trash2, Globe, Shield, Check, Search, Edit2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'

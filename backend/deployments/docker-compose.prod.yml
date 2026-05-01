@@ -40,12 +40,18 @@ services:
     expose:
       - "8080"   # OpenAI-compatible proxy — internal only, nginx proxies it
       - "8081"   # Admin API — internal only, nginx proxies /api/
-    env_file:
-      - .env.prod
     environment:
+      ENV: prod
+      PROXY_PORT: "8080"
+      ADMIN_PORT: "8081"
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-ai-gateway}
       OTEL_COLLECTOR_ADDR: otel-collector:4317
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gateway}?sslmode=disable
+      UPSTREAM_0_KEY_ID: ${UPSTREAM_0_KEY_ID}
+      UPSTREAM_0_MODEL: ${UPSTREAM_0_MODEL:-gpt-4o}
+      UPSTREAM_0_BASE_URL: ${UPSTREAM_0_BASE_URL:-https://api.openai.com}
+      UPSTREAM_0_API_KEY: ${UPSTREAM_0_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy

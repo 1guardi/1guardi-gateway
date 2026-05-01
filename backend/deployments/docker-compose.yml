@@ -116,9 +116,8 @@ services:
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
   jaeger:
     profiles: ["infra"]
-    image: jaegertracing/all-in-one:1.75.0
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
       SPAN_STORAGE_TYPE: badger
       BADGER_EPHEMERAL: "false"
       BADGER_DIRECTORY_VALUE: /badger/data
@@ -126,7 +125,6 @@ services:
       BADGER_SPAN_STORE_TTL: "24h"
     ports:
       - "16686:16686" # Jaeger UI — open http://localhost:16686
-      - "14250:14250" # gRPC — collector sends spans here
     volumes:
       - jaeger_data:/badger
     deploy:

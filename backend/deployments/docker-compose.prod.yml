@@ -130,9 +130,44 @@ services:
   # ── OTel Collector ────────────────────────────────────────────────────────
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.150.1
-    command: ["--config=/etc/otel/config.yaml"]
-    volumes:
-      - ./otel-collector.prod.yaml:/etc/otel/config.yaml:ro
+    # Config is passed inline via env var — no file mount needed (Portainer-safe)
+    command: ["--config=env:OTEL_CONFIG"]
+    environment:
+      OTEL_CONFIG: |
+        receivers:
+          otlp:
+            protocols:
+              grpc:
+                endpoint: 0.0.0.0:4317
+              http:
+                endpoint: 0.0.0.0:4318
+        processors:
+          batch:
+            timeout: 5s
+            send_batch_size: 512
+          filter/health:
+            error_mode: ignore
+            traces:
+              span:
+                - 'attributes["http.target"] == "/health"'
+                - 'attributes["http.target"] == "/ready"'
+                - 'attributes["url.path"] == "/health"'
+                - 'attributes["url.path"] == "/ready"'
+        exporters:
+          otlp/jaeger:
+            endpoint: jaeger:4317
+            tls:
+              insecure: true
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13133
+        service:
+          extensions: [health_check]
+          pipelines:
+            traces:
+              receivers:  [otlp]
+              processors: [batch, filter/health]
+              exporters:  [otlp/jaeger]
     expose:
       - "4317"
       - "4318"
@@ -153,9 +188,9 @@ services:
 
   # ── Jaeger (trace UI — bind to localhost or add nginx auth to expose) ─────
   jaeger:
-    image: jaegertracing/all-in-one:1.75.0
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
+    user: root
     environment:
-      COLLECTOR_OTLP_ENABLED: "true"
       SPAN_STORAGE_TYPE: badger
       BADGER_EPHEMERAL: "false"
       BADGER_DIRECTORY_VALUE: /badger/data
@@ -163,7 +198,6 @@ services:
       BADGER_SPAN_STORE_TTL: "72h"
     expose:
       - "16686"
-      - "14250"
       - "4317"
     volumes:
       - jaeger_data:/badger

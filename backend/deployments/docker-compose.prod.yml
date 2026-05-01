@@ -178,11 +178,6 @@ services:
           memory: 256M
     restart: always
     logging: *json-logging
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     depends_on:
       - jaeger
 

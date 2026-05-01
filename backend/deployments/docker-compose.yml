@@ -99,11 +99,6 @@ services:
     ports:
       - "4317:4317"   # OTLP gRPC — gateway exports here
       - "4318:4318"   # OTLP HTTP
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:13133/"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     deploy:
       resources:
         limits:

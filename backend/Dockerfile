@@ -1,5 +1,10 @@
 # ── Build stage ────────────────────────────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+# BUILDPLATFORM = host platform (fast native compile)
+# TARGETPLATFORM/TARGETARCH = destination platform (what Docker is building for)
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+ARG TARGETARCH
+ARG TARGETOS=linux
 
 RUN apk add --no-cache git ca-certificates tzdata
 
@@ -11,7 +16,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags="-w -s" -trimpath \
     -o /app/gateway ./cmd/gateway
 

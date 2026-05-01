@@ -16,7 +16,7 @@ services:
       context: ../../frontend
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "8083:80"
       # Uncomment and configure TLS termination when you add certificates:
       # - "443:443"
     volumes:

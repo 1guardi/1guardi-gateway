@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Trash2, User } from 'lucide-react'
+import { Plus, Trash2, User, RefreshCw, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +20,8 @@ export default function Members({ tenantId }: MembersProps) {
   const [newMemberUserId, setNewMemberUserId] = useState<string>('')
   const [newMemberEmail, setNewMemberEmail] = useState<string>('')
   const [newMemberName, setNewMemberName] = useState<string>('')
+  const [newMemberPassword, setNewMemberPassword] = useState<string>('')
+  const [showPassword, setShowPassword] = useState(false)
   const [newMemberRole, setNewMemberRole] = useState<string>('')
   const [isAddOpen, setIsAddOpen] = useState(false)
 
@@ -30,6 +32,16 @@ export default function Members({ tenantId }: MembersProps) {
   const { mutate: addMember } = useAddMember(tenantId)
   const { mutate: removeMember } = useRemoveMember(tenantId)
 
+  const generatePassword = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*'
+    let pass = ''
+    for (let i = 0; i < 12; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    setNewMemberPassword(pass)
+    setShowPassword(true)
+  }
+
   const handleAddMember = () => {
     if (!tenantId || !newMemberRole) return
     const payload: any = { role_id: Number(newMemberRole) }
@@ -38,6 +50,7 @@ export default function Members({ tenantId }: MembersProps) {
     } else if (activeTab === 'new' && newMemberEmail && newMemberName) {
       payload.email = newMemberEmail
       payload.name = newMemberName
+      payload.password = newMemberPassword
     } else {
       return
     }
@@ -47,6 +60,7 @@ export default function Members({ tenantId }: MembersProps) {
         setNewMemberUserId('')
         setNewMemberEmail('')
         setNewMemberName('')
+        setNewMemberPassword('')
         setNewMemberRole('')
         setIsAddOpen(false)
       }
@@ -125,6 +139,32 @@ export default function Members({ tenantId }: MembersProps) {
                       placeholder="alice@example.com"
                     />
                   </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-password" content-between className="font-mono text-[10px] tracking-widest text-muted-foreground flex items-center justify-between">
+                      PASSWORD
+                      <Button variant="link" onClick={generatePassword} className="h-auto p-0 font-mono text-[9px] text-primary">
+                        <RefreshCw className="w-3 h-3 mr-1" /> AUTO-GENERATE
+                      </Button>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="new-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={newMemberPassword}
+                        onChange={(e) => setNewMemberPassword(e.target.value)}
+                        className="font-mono text-xs pr-10"
+                        placeholder="••••••••"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 text-muted-foreground"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </Button>
+                    </div>
+                  </div>
                 </TabsContent>
               </Tabs>
               <div className="grid gap-2">
@@ -135,8 +175,8 @@ export default function Members({ tenantId }: MembersProps) {
                   </SelectTrigger>
                   <SelectContent>
                     {roles.map((role: RoleResponse) => (
-                      <SelectItem key={role.ID} value={String(role.ID)} className="font-mono text-xs">
-                        {role.Name}
+                      <SelectItem key={role.ID} value={String(role.ID)} className="font-mono text-xs capitalize">
+                        {role.Name.replace(/([A-Z])/g, ' $1').trim()}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -181,8 +221,8 @@ export default function Members({ tenantId }: MembersProps) {
                     <div className="text-[10px] text-muted-foreground">{member.User?.Email}</div>
                   </TableCell>
                   <TableCell className="py-2.5">
-                    <Badge variant="secondary" className="font-mono text-[10px] tracking-widest uppercase rounded-sm bg-primary/10 text-primary hover:bg-primary/20 border-primary/20">
-                      {member.Role?.Name}
+                    <Badge variant="secondary" className="font-mono text-[10px] tracking-widest uppercase rounded-sm bg-primary/10 text-primary hover:bg-primary/20 border-primary/20 capitalize">
+                      {member.Role?.Name?.replace(/([A-Z])/g, ' $1').trim()}
                     </Badge>
                   </TableCell>
                   <TableCell className="py-2.5 font-mono text-xs text-muted-foreground">

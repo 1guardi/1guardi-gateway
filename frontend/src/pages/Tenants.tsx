@@ -7,6 +7,12 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2, Building2 } from 'lucide-react'
 import { useTenants, useCreateTenant, useDeleteTenant } from '../api/tenants'
+import { jwtDecode } from 'jwt-decode'
+
+interface JWTPayload {
+  is_super_admin: boolean
+  [key: string]: any
+}
 
 interface TenantsProps {
   activeTenantId: string | null
@@ -17,6 +23,9 @@ export default function Tenants({ activeTenantId, onTenantSelect }: TenantsProps
   const { data: tenants = [], isLoading } = useTenants()
   const createTenant = useCreateTenant()
   const deleteTenant = useDeleteTenant()
+
+  const token = localStorage.getItem('admin_token')
+  const isSuperAdmin = token ? jwtDecode<JWTPayload>(token).is_super_admin : false
 
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
@@ -44,13 +53,15 @@ export default function Tenants({ activeTenantId, onTenantSelect }: TenantsProps
           <p className="font-mono text-[9px] tracking-widest text-muted-foreground mb-1">MULTI-TENANT</p>
           <h1 className="text-xl font-bold text-foreground">Tenants</h1>
         </div>
-        <Button
-          onClick={() => setShowCreate(true)}
-          className="font-mono text-xs tracking-widest gap-2"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          NEW TENANT
-        </Button>
+        {isSuperAdmin && (
+          <Button
+            onClick={() => setShowCreate(true)}
+            className="font-mono text-xs tracking-widest gap-2"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            NEW TENANT
+          </Button>
+        )}
       </div>
 
       {/* Stats */}
@@ -111,15 +122,17 @@ export default function Tenants({ activeTenantId, onTenantSelect }: TenantsProps
                   {tenant.CreatedAt ? new Date(tenant.CreatedAt).toLocaleDateString() : '—'}
                 </span>
                 <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => setDeleteConfirm(tenant.ID)}
-                    disabled={deleteTenant.isPending}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                  {isSuperAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteConfirm(tenant.ID)}
+                      disabled={deleteTenant.isPending}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               </div>
             )

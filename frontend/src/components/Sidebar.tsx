@@ -30,10 +30,19 @@ interface SidebarProps {
   tenantName: string
   agents: AgentSummary[]
   onLogout: () => void
+  isSuperAdmin: boolean
+  tenantCount: number
 }
 
-export default function Sidebar({ current, onChange, agent, onAgentChange, tenantName, agents, onLogout }: SidebarProps) {
+export default function Sidebar({ current, onChange, agent, onAgentChange, tenantName, agents, onLogout, isSuperAdmin, tenantCount }: SidebarProps) {
   const { theme, setTheme } = useTheme()
+
+  const filteredNavItems = navItems.filter(item => {
+    if (item.id === 'tenants') {
+      return isSuperAdmin || tenantCount > 1
+    }
+    return true
+  })
 
   return (
     <aside className="relative flex-shrink-0 w-56 flex flex-col border-r bg-sidebar border-sidebar-border">
@@ -82,7 +91,7 @@ export default function Sidebar({ current, onChange, agent, onAgentChange, tenan
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
+        {filteredNavItems.map((item) => {
           const active = current === item.id
           const soon = comingSoonPages.has(item.id)
           return (

@@ -111,3 +111,23 @@ func TestSeedSuperAdmin_EmptyPassword(t *testing.T) {
 	database.Model(&User{}).Count(&count)
 	assert.Equal(t, int64(0), count)
 }
+
+func TestSeedRBAC(t *testing.T) {
+	database := setupSeedTestDB(t)
+
+	require.NoError(t, SeedRBAC(database))
+
+	var role Role
+	require.NoError(t, database.Where("name = ?", "tenantAdmin").Preload("Permissions").First(&role).Error)
+	assert.NotEmpty(t, role.Permissions)
+
+	var userRole Role
+	require.NoError(t, database.Where("name = ?", "user").Preload("Permissions").First(&userRole).Error)
+	assert.NotEmpty(t, userRole.Permissions)
+
+	// Check that user role has fewer permissions than admin (it's read-only)
+	assert.True(t, len(userRole.Permissions) < len(role.Permissions))
+
+	// Test idempotency
+	require.NoError(t, SeedRBAC(database))
+}

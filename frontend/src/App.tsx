@@ -16,8 +16,14 @@ import Upstreams from './pages/Upstreams.tsx'
 import Tenants from './pages/Tenants.tsx'
 import { useTenants } from './api/tenants.ts'
 import { useAgents } from './api/agents.ts'
+import { jwtDecode } from 'jwt-decode'
 
 export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams' | 'tenants' | 'members'
+
+interface JWTPayload {
+  is_super_admin: boolean
+  [key: string]: any
+}
 
 const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
 
@@ -30,6 +36,9 @@ export default function App() {
   const [page, setPage] = useState<Page>('router')
   const [selectedAgent, setSelectedAgent] = useState<string>('all')
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
+
+  const token = localStorage.getItem('admin_token')
+  const isSuperAdmin = token ? jwtDecode<JWTPayload>(token).is_super_admin : false
 
   const { data: tenants } = useTenants()
   const tenant = activeTenantId
@@ -84,6 +93,8 @@ export default function App() {
           tenantName={tenantName}
           agents={agents}
           onLogout={logout}
+          isSuperAdmin={isSuperAdmin}
+          tenantCount={tenants?.length || 0}
         />
         <main className="relative flex-1 overflow-y-auto min-h-screen">
           {pages[page]}

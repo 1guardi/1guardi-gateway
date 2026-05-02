@@ -38,7 +38,7 @@ export function useMembers(tenantId: string | null) {
 export function useAddMember(tenantId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (req: { user_id?: number; email?: string; name?: string; role_id: number }) => {
+    mutationFn: async (req: { user_id?: number; email?: string; name?: string; password?: string; role_id: number }) => {
       const { data } = await apiClient.post<TenantMemberResponse>(`/tenants/${tenantId}/members`, req)
       return data
     },

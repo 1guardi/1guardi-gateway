@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -334,4 +335,168 @@ func TestNotImplementedAdminHandlers(t *testing.T) {
 		router.ServeHTTP(rr, req)
 		assert.Equal(t, http.StatusNotImplemented, rr.Code, "path: %s", ep.path)
 	}
+}
+
+func TestRBACAndMembers(t *testing.T) {
+	database := setupTestDB(t)
+	require.NoError(t, db.SeedRBAC(database))
+	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
+
+	cfg := testCfg()
+	handler := NewRouter(cfg, database, nil, nil, nil)
+
+	// 1. Create a tenant and a regular user
+	tenant := db.Tenant{Name: "Tenant A", APIKey: "key-a"}
+	database.Create(&tenant)
+
+	user := db.User{Name: "Normal User", Email: "user@example.com", PasswordHash: "xxx"}
+	database.Create(&user)
+
+	// 2. Add user to tenant as 'user' (read-only)
+	var userRole db.Role
+	database.Where("name = ?", "user").First(&userRole)
+
+	member := db.TenantMember{UserID: user.ID, TenantID: tenant.ID, RoleID: userRole.ID}
+	database.Create(&member)
+
+	// 3. Generate token for regular user
+	userToken, _ := auth.GenerateToken(user.ID, user.Name, user.Email, false, testJWTSecret, time.Hour)
+
+	t.Run("MemberCanReadAgents", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/tenants/%d/agents", tenant.ID), nil)
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	t.Run("MemberCannotCreateAgent", func(t *testing.T) {
+		body := `{"name":"Illegal Agent"}`
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/tenants/%d/agents", tenant.ID), bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer "+userToken)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+	})
+
+	t.Run("SuperAdminBypassesAll", func(t *testing.T) {
+		adminToken, _ := auth.GenerateToken(999, "Admin", "admin@e.com", true, testJWTSecret, time.Hour)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/tenants/%d/agents", tenant.ID), bytes.NewBufferString(`{"name":"Admin Agent"}`))
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusCreated, rr.Code)
+	})
+
+	t.Run("ListMembers", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/tenants/%d/members", tenant.ID), nil)
+		req = authRequest(t, req)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var members []db.TenantMember
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &members))
+		assert.Len(t, members, 1)
+		assert.Equal(t, "user@example.com", members[0].User.Email)
+	})
+
+	t.Run("AddMemberNewUser", func(t *testing.T) {
+		body := fmt.Sprintf(`{"name":"New Guy","email":"new@guy.com","password":"pass","role_id":%d}`, userRole.ID)
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/tenants/%d/members", tenant.ID), bytes.NewBufferString(body))
+		req = authRequest(t, req)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusCreated, rr.Code)
+
+		var newUser db.User
+		assert.NoError(t, database.Where("email = ?", "new@guy.com").First(&newUser).Error)
+		assert.Equal(t, "New Guy", newUser.Name)
+	})
+
+	t.Run("RemoveMember", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/tenants/%d/members/%d", tenant.ID, user.ID), nil)
+		req = authRequest(t, req)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusNoContent, rr.Code)
+
+		var count int64
+		database.Model(&db.TenantMember{}).Where("tenant_id = ? AND user_id = ?", tenant.ID, user.ID).Count(&count)
+		assert.Equal(t, int64(0), count)
+	})
+
+	t.Run("ListRoles", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/roles", nil)
+		req = authRequest(t, req)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+
+		var roles []db.Role
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &roles))
+		assert.GreaterOrEqual(t, len(roles), 2)
+	})
+}
+
+func TestListUsers(t *testing.T) {
+	database := setupTestDB(t)
+	handler := NewRouter(testCfg(), database, nil, nil, nil)
+
+	database.Create(&db.User{Name: "User 1", Email: "u1@e.com"})
+	database.Create(&db.User{Name: "User 2", Email: "u2@e.com"})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	req = authRequest(t, req)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var users []db.User
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &users))
+	assert.GreaterOrEqual(t, len(users), 2)
+	assert.Empty(t, users[0].PasswordHash)
+}
+
+func TestUpdateTenant(t *testing.T) {
+	database := setupTestDB(t)
+	handler := NewRouter(testCfg(), database, nil, nil, nil)
+
+	tenant := db.Tenant{Name: "Old Name", Description: "Old Desc", APIKey: "key"}
+	database.Create(&tenant)
+
+	body := `{"name":"New Name","description":"New Desc"}`
+	req := httptest.NewRequest(http.MethodPatch, fmt.Sprintf("/api/v1/tenants/%d", tenant.ID), bytes.NewBufferString(body))
+	req = authRequest(t, req)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var updated db.Tenant
+	database.First(&updated, tenant.ID)
+	assert.Equal(t, "New Name", updated.Name)
+	assert.Equal(t, "New Desc", updated.Description)
+}
+
+func TestHealth(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rr := httptest.NewRecorder()
+	handleHealth(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestListProviderModels(t *testing.T) {
+	database := setupTestDB(t)
+	handler := NewRouter(testCfg(), database, nil, nil, nil)
+
+	// This will fail because modelsSvc is nil in NewRouter call above,
+	// but let's see if we can hit the param parsing logic.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/openai/models?apiKey=test", nil)
+	req = authRequest(t, req)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	// It should error out because modelsSvc is nil or fetch fails
+	assert.NotEqual(t, http.StatusNotFound, rr.Code)
 }

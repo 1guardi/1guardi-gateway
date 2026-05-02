@@ -286,8 +286,18 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value("claims").(*auth.Claims)
+
 	var tenants []db.Tenant
-	if err := s.db.Find(&tenants).Error; err != nil {
+	query := s.db.Model(&db.Tenant{})
+
+	if !claims.IsSuperAdmin {
+		// Join with TenantMembers to only show tenants the user belongs to
+		query = query.Joins("JOIN tenant_members ON tenant_members.tenant_id = tenants.id").
+			Where("tenant_members.user_id = ?", claims.UserID)
+	}
+
+	if err := query.Find(&tenants).Error; err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -297,6 +307,12 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value("claims").(*auth.Claims)
+	if !claims.IsSuperAdmin {
+		http.Error(w, "forbidden: superadmin only", http.StatusForbidden)
+		return
+	}
+
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
@@ -721,10 +737,11 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := strconv.Atoi(tenantIDStr)
 
 	var req struct {
-		UserID *uint  `json:"user_id"`
-		Email  string `json:"email"`
-		Name   string `json:"name"`
-		RoleID uint   `json:"role_id"`
+		UserID   *uint  `json:"user_id"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+		RoleID   uint   `json:"role_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -738,12 +755,24 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if req.Email != "" && req.Name != "" {
-		if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+		if err := s.db.Where("email = ?", req.Email).First(&user).Error; err == nil {
+			// User exists, just use them
+		} else {
 			// Auto-create user
+			var hash []byte
+			if req.Password != "" {
+				var err error
+				hash, err = bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+				if err != nil {
+					http.Error(w, "failed to hash password", http.StatusInternalServerError)
+					return
+				}
+			}
+
 			user = db.User{
 				Email:        req.Email,
 				Name:         req.Name,
-				PasswordHash: "", // Needs proper generation or invite flow
+				PasswordHash: string(hash),
 			}
 			if err := s.db.Create(&user).Error; err != nil {
 				http.Error(w, "failed to create user", http.StatusInternalServerError)

@@ -46,8 +46,11 @@ services:
       OTEL_COLLECTOR_ADDR: otel-collector:4317
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gateway}?sslmode=disable
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-649NB7B/83I=}
+      JWT_SECRET: ${JWT_SECRET}
       UPSTREAM_0_KEY_ID: ${UPSTREAM_0_KEY_ID}
-      UPSTREAM_0_MODEL: ${UPSTREAM_0_MODEL:-gpt-4o}
+      UPSTREAM_0_MODEL: ${UPSTREAM_0_MODEL:-gpt-5.4}
       UPSTREAM_0_BASE_URL: ${UPSTREAM_0_BASE_URL:-https://api.openai.com}
       UPSTREAM_0_API_KEY: ${UPSTREAM_0_API_KEY}
     depends_on:

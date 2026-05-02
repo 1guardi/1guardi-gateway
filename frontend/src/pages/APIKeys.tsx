@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { AgentSummary } from '../api/agents.ts'
 import { useAPIKeys, useCreateAPIKey, useDeleteAPIKey } from '../api/keys.ts'
 import { useMembers } from '../api/members.ts'
@@ -55,6 +56,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
   const [newKeyUserId, setNewKeyUserId] = useState<string>('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isGuideOpen, setIsGuideOpen] = useState(false)
 
   const { data: keysData = [] } = useAPIKeys(tenantId)
   const keys = keysData.map(toVM)
@@ -108,7 +110,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
               <Plus className="w-3.5 h-3.5" /> Create New Key
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="sm:max-w-[500px]">
             {!createdKey ? (
               <>
                 <DialogHeader>
@@ -216,7 +218,14 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                     </p>
                   </div>
                 </div>
-                <DialogFooter>
+                <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+                  <Button
+                    variant="outline"
+                    className="w-full font-mono text-xs gap-2"
+                    onClick={() => setIsGuideOpen(true)}
+                  >
+                    <ExternalLink className="w-3 h-3" /> View Integration Guide
+                  </Button>
                   <Button className="w-full font-mono text-xs" onClick={() => setIsCreateOpen(false)}>I have saved the key</Button>
                 </DialogFooter>
               </>
@@ -226,7 +235,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
       </div>
 
       {/* Status strip */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
         <Card className="bg-primary/5 border-primary/10">
           <CardContent className="p-3">
             <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase mb-2">Active Keys</p>
@@ -251,6 +260,18 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
             <p className="font-mono text-2xl font-black text-foreground">—</p>
             <div className="flex items-center gap-1.5 mt-1">
               <span className="text-[10px] font-mono text-muted-foreground uppercase">Not tracked</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-dashed border-primary/30 hover:border-primary/50 transition-colors cursor-pointer" onClick={() => setIsGuideOpen(true)}>
+          <CardContent className="p-3 h-full flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[10px] tracking-widest text-primary uppercase">Quick Start</p>
+              <ExternalLink className="w-3 h-3 text-primary" />
+            </div>
+            <p className="font-mono text-[10px] text-muted-foreground mt-2 leading-tight">Learn how to connect your app using the OpenAI SDK.</p>
+            <div className="mt-3">
+              <span className="text-[10px] font-mono text-primary underline underline-offset-2">INTEGRATION GUIDE</span>
             </div>
           </CardContent>
         </Card>
@@ -312,7 +333,13 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          title="View Integration Guide"
+                          onClick={() => setIsGuideOpen(true)}
+                        >
                           <ExternalLink className="w-3 h-3" />
                         </Button>
                         {key.isActive && (
@@ -339,14 +366,148 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
         <div className="flex items-center gap-3">
           <Shield className="w-4 h-4 text-muted-foreground" />
           <div>
-            <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase">Security Protocol</p>
-            <p className="font-mono text-xs text-muted-foreground/60">Emergency key rotation available in tenant configuration.</p>
+            <p className="font-mono text-[10px] tracking-widest text-muted-foreground uppercase">Integration & Security</p>
+            <p className="font-mono text-xs text-muted-foreground/60">Follow our security best practices and integration guide for your apps.</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="font-mono text-[10px] tracking-widest uppercase h-8 px-3">
-          Settings
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="font-mono text-[10px] tracking-widest uppercase h-8 px-3"
+            onClick={() => setIsGuideOpen(true)}
+          >
+            Documentation
+          </Button>
+          <Button variant="outline" size="sm" className="font-mono text-[10px] tracking-widest uppercase h-8 px-3">
+            Settings
+          </Button>
+        </div>
       </div>
+
+      <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
+        <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="font-black tracking-tight flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" /> Integration Guide
+            </DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              Connect your application to the AI Gateway using OpenAI-compatible SDKs.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-6 py-4">
+              <section>
+                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Endpoint Configuration</h3>
+                <div className="bg-muted p-3 rounded border font-mono text-xs space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Proxy URL</span>
+                    <span className="text-foreground">http://localhost:8080/v1</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Auth Method</span>
+                    <span className="text-foreground">Bearer Token</span>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Context Headers</h3>
+                <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+                  Pass additional metadata for tracing, multi-tenancy, and routing via standard HTTP headers.
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="font-mono text-[9px] tracking-widest h-8">HEADER</TableHead>
+                      <TableHead className="font-mono text-[9px] tracking-widest h-8">DESCRIPTION</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[
+                      { h: 'X-Agent-Id', d: 'Identifier for tracing and policy' },
+                      { h: 'X-Tenant-Id', d: 'Tenant namespace isolation' },
+                      { h: 'X-Thread-Id', d: 'Persistent conversation ID' },
+                    ].map((row) => (
+                      <TableRow key={row.h} className="border-border py-0">
+                        <TableCell className="font-mono text-[10px] py-2">{row.h}</TableCell>
+                        <TableCell className="text-[10px] py-2 text-muted-foreground">{row.d}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </section>
+
+              <section>
+                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Code Example</h3>
+                <Tabs defaultValue="python" className="w-full">
+                  <TabsList className="bg-muted w-full justify-start rounded-b-none border-b-0 h-9 p-0.5">
+                    <TabsTrigger value="python" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">Python</TabsTrigger>
+                    <TabsTrigger value="node" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">Node.js</TabsTrigger>
+                    <TabsTrigger value="curl" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">cURL</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="python" className="mt-0">
+                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
+{`from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:8080/v1",
+    api_key="sk_your_key_here"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello!"}],
+    extra_headers={
+        "X-Agent-Id": "my-agent",
+        "X-Tenant-Id": "${tenantId || 'tenant-id'}"
+    }
+)`}
+                    </pre>
+                  </TabsContent>
+                  <TabsContent value="node" className="mt-0">
+                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
+{`import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: 'http://localhost:8080/v1',
+  apiKey: 'sk_your_key_here',
+});
+
+const response = await openai.chat.completions.create({
+  model: 'gpt-4',
+  messages: [{ role: 'user', content: 'Hello!' }],
+}, {
+  headers: {
+    'X-Agent-Id': 'my-agent',
+    'X-Tenant-Id': '${tenantId || 'tenant-id'}',
+  }
+});`}
+                    </pre>
+                  </TabsContent>
+                  <TabsContent value="curl" className="mt-0">
+                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
+{`curl http://localhost:8080/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer sk_your_key_here" \\
+  -H "X-Agent-Id: my-agent" \\
+  -d '{
+    "model": "gpt-4",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`}
+                    </pre>
+                  </TabsContent>
+                </Tabs>
+              </section>
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="mt-4 pt-4 border-t">
+            <Button onClick={() => setIsGuideOpen(false)} className="font-mono text-xs w-full">Close Guide</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -56,6 +56,9 @@ func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, 
 	mux.Post("/v1/embeddings", srv.handleEmbeddings)
 	mux.Get("/v1/models", srv.handleListModels)
 
+	// Anthropic-compatible surface
+	mux.Post("/v1/messages", srv.handleAnthropicMessages)
+
 	return otelhttp.NewHandler(mux, "proxy",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
 	)
@@ -64,19 +67,27 @@ func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, 
 // Authenticate validates the API key and attaches tenant context.
 func (s *Server) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var key string
+
+		// 1. Check OpenAI/Standard Authorization header
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			writeError(w, http.StatusUnauthorized, "missing authorization header", "invalid_request_error")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				key = parts[1]
+			}
+		}
+
+		// 2. Fallback to Anthropic-specific header (for native passthrough)
+		if key == "" {
+			key = r.Header.Get("x-api-key")
+		}
+
+		if key == "" {
+			writeError(w, http.StatusUnauthorized, "missing authorization header or x-api-key", "invalid_request_error")
 			return
 		}
 
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			writeError(w, http.StatusUnauthorized, "invalid authorization header format", "invalid_request_error")
-			return
-		}
-
-		key := parts[1]
 		hash := auth.HashKey(key)
 
 		// 1. Try cache first

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import IntegrationGuide from '../components/IntegrationGuide.tsx'
 import type { AgentSummary } from '../api/agents.ts'
 import { useAPIKeys, useCreateAPIKey, useDeleteAPIKey } from '../api/keys.ts'
 import { useMembers } from '../api/members.ts'
@@ -386,127 +386,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
       </div>
 
       <Dialog open={isGuideOpen} onOpenChange={setIsGuideOpen}>
-        <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="font-black tracking-tight flex items-center gap-2">
-              <Shield className="w-5 h-5 text-primary" /> Integration Guide
-            </DialogTitle>
-            <DialogDescription className="font-mono text-xs">
-              Connect your application to the AI Gateway using OpenAI-compatible SDKs.
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-6 py-4">
-              <section>
-                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Endpoint Configuration</h3>
-                <div className="bg-muted p-3 rounded border font-mono text-xs space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Proxy URL</span>
-                    <span className="text-foreground">http://localhost:8080/v1</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Auth Method</span>
-                    <span className="text-foreground">Bearer Token</span>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Context Headers</h3>
-                <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
-                  Pass additional metadata for tracing, multi-tenancy, and routing via standard HTTP headers.
-                </p>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border hover:bg-transparent">
-                      <TableHead className="font-mono text-[9px] tracking-widest h-8">HEADER</TableHead>
-                      <TableHead className="font-mono text-[9px] tracking-widest h-8">DESCRIPTION</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[
-                      { h: 'X-Agent-Id', d: 'Identifier for tracing and policy' },
-                      { h: 'X-Tenant-Id', d: 'Tenant namespace isolation' },
-                      { h: 'X-Thread-Id', d: 'Persistent conversation ID' },
-                    ].map((row) => (
-                      <TableRow key={row.h} className="border-border py-0">
-                        <TableCell className="font-mono text-[10px] py-2">{row.h}</TableCell>
-                        <TableCell className="text-[10px] py-2 text-muted-foreground">{row.d}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </section>
-
-              <section>
-                <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-2">Code Example</h3>
-                <Tabs defaultValue="python" className="w-full">
-                  <TabsList className="bg-muted w-full justify-start rounded-b-none border-b-0 h-9 p-0.5">
-                    <TabsTrigger value="python" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">Python</TabsTrigger>
-                    <TabsTrigger value="node" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">Node.js</TabsTrigger>
-                    <TabsTrigger value="curl" className="font-mono text-[10px] h-8 data-[state=active]:bg-background">cURL</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="python" className="mt-0">
-                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
-{`from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8080/v1",
-    api_key="sk_your_key_here"
-)
-
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Hello!"}],
-    extra_headers={
-        "X-Agent-Id": "my-agent",
-        "X-Tenant-Id": "${tenantId || 'tenant-id'}"
-    }
-)`}
-                    </pre>
-                  </TabsContent>
-                  <TabsContent value="node" className="mt-0">
-                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
-{`import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
-  apiKey: 'sk_your_key_here',
-});
-
-const response = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Hello!' }],
-}, {
-  headers: {
-    'X-Agent-Id': 'my-agent',
-    'X-Tenant-Id': '${tenantId || 'tenant-id'}',
-  }
-});`}
-                    </pre>
-                  </TabsContent>
-                  <TabsContent value="curl" className="mt-0">
-                    <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
-{`curl http://localhost:8080/v1/chat/completions \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sk_your_key_here" \\
-  -H "X-Agent-Id: my-agent" \\
-  -d '{
-    "model": "gpt-4",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'`}
-                    </pre>
-                  </TabsContent>
-                </Tabs>
-              </section>
-            </div>
-          </ScrollArea>
-
-          <DialogFooter className="mt-4 pt-4 border-t">
-            <Button onClick={() => setIsGuideOpen(false)} className="font-mono text-xs w-full">Close Guide</Button>
-          </DialogFooter>
-        </DialogContent>
+        <IntegrationGuide tenantId={tenantId} onClose={() => setIsGuideOpen(false)} />
       </Dialog>
     </div>
   )

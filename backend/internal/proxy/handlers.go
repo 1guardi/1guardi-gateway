@@ -67,6 +67,18 @@ type listModelsResponse struct {
 	Data   []openAIModel `json:"data"`
 }
 
+type anthropicModel struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type anthropicListModelsResponse struct {
+	Data    []anthropicModel `json:"data"`
+	HasMore bool             `json:"has_more"`
+}
+
 // modelPrice holds per-million-token USD pricing.
 type modelPrice struct {
 	inputPerMTok  float64
@@ -414,6 +426,109 @@ func (s *Server) extractUsage(provider string, body []byte) (int, int) {
 	return 0, 0
 }
 
+// handleAnthropicMessages handles POST /v1/messages for native Anthropic SDKs/CLIs.
+func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	rawBody, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body", "invalid_request_error")
+		return
+	}
+
+	var req struct {
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
+	}
+	if err := json.Unmarshal(rawBody, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid json", "invalid_request_error")
+		return
+	}
+
+	if req.Model == "" {
+		writeError(w, http.StatusBadRequest, "model is required", "invalid_request_error")
+		return
+	}
+
+	tc := TenantCtx(r.Context())
+	var tenantID uint
+	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
+
+	endpoint, err := s.router.Pick(tenantID, req.Model)
+	if err != nil {
+		if errors.Is(err, llmrouter.ErrNoEndpoint) {
+			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("no available upstream for model %q", req.Model), "api_error")
+		} else {
+			writeError(w, http.StatusInternalServerError, "router error", "api_error")
+		}
+		return
+	}
+
+	// For now, we assume Anthropic protocol passthrough.
+	// In the future, we can add Anthropic -> OpenAI translation here if needed.
+	baseURL := strings.TrimRight(endpoint.BaseURL(), "/")
+	url := baseURL + "/v1/messages"
+
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to build upstream request", "api_error")
+		return
+	}
+
+	upstreamReq.Header.Set("Content-Type", "application/json")
+	upstreamReq.Header.Set("x-api-key", endpoint.APIKey())
+	upstreamReq.Header.Set("anthropic-version", "2023-06-01")
+
+	start := time.Now()
+	resp, err := s.httpClient.Do(upstreamReq)
+	if err != nil {
+		endpoint.RecordError()
+		writeError(w, http.StatusBadGateway, "upstream request failed", "api_error")
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+
+	var ttftMS float64
+	var inputTokens, outputTokens int
+
+	if req.Stream {
+		ttftMS, inputTokens, outputTokens = s.proxySSE(w, endpoint.Provider(), resp.Body, start)
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		ttftMS = float64(time.Since(start).Milliseconds())
+		inputTokens, outputTokens = s.extractUsage(endpoint.Provider(), body)
+		w.Write(body)
+	}
+
+	// Record telemetry
+	totalSec := time.Since(start).Seconds()
+	var tps float64
+	if totalSec > 0 && outputTokens > 0 {
+		tps = float64(outputTokens) / totalSec
+	}
+
+	if resp.StatusCode >= 500 {
+		endpoint.RecordError()
+	} else {
+		endpoint.RecordSuccess(ttftMS, tps)
+	}
+
+	span := trace.SpanFromContext(r.Context())
+	span.SetAttributes(
+		attribute.String("gen_ai.model", req.Model),
+		attribute.String("gen_ai.thread.id", tc.ThreadID),
+		attribute.String("gen_ai.agent.id", tc.AgentID),
+		attribute.Int("gen_ai.input.tokens", inputTokens),
+		attribute.Int("gen_ai.output.tokens", outputTokens),
+		attribute.Float64("gen_ai.ttft_ms", ttftMS),
+		attribute.Float64("gen_ai.tps", tps),
+		attribute.Float64("gen_ai.cost.usd", calcCost(req.Model, inputTokens, outputTokens)),
+	)
+}
+
 // handleCompletions handles POST /v1/completions (legacy).
 func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented", "api_error")
@@ -431,8 +546,32 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
 
 	endpoints := s.router.List()
+	isAnthropic := r.Header.Get("anthropic-version") != ""
 
 	// Deduplicate models by ID for this tenant.
+	if isAnthropic {
+		data := make([]anthropicModel, 0)
+		seen := make(map[string]bool)
+		for _, e := range endpoints {
+			if e.TenantID == tenantID && !seen[e.Model] {
+				seen[e.Model] = true
+				data = append(data, anthropicModel{
+					ID:          e.Model,
+					Type:        "model",
+					DisplayName: e.Model,
+					CreatedAt:   time.Now().Format(time.RFC3339),
+				})
+			}
+		}
+		sort.Slice(data, func(i, j int) bool { return data[i].ID < data[j].ID })
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(anthropicListModelsResponse{
+			Data:    data,
+			HasMore: false,
+		})
+		return
+	}
+
 	uniqueModels := make(map[string]openAIModel)
 	for _, e := range endpoints {
 		if e.TenantID == tenantID {

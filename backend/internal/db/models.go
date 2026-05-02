@@ -54,6 +54,14 @@ type Upstream struct {
 	Tenant   Tenant `gorm:"-" json:"-"`
 }
 
+// AdminUser represents an admin who can manage the gateway via the admin UI.
+type AdminUser struct {
+	gorm.Model
+	Username     string `gorm:"uniqueIndex;not null"`
+	PasswordHash string `gorm:"not null"`
+	IsActive     bool   `gorm:"default:true"`
+}
+
 // AutoMigrate runs schema migrations for all models.
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -61,5 +69,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&Agent{},
 		&APIKey{},
 		&Upstream{},
+		&AdminUser{},
 	)
 }

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Sidebar from './components/Sidebar.tsx'
 import ComingSoon from './components/ComingSoon.tsx'
+import Login from './pages/Login.tsx'
 import Overview from './pages/Overview.tsx'
 import Traces from './pages/Traces.tsx'
 import Guardrails from './pages/Guardrails.tsx'
@@ -11,10 +12,11 @@ import Router from './pages/Router.tsx'
 import APIKeys from './pages/APIKeys.tsx'
 import Agents from './pages/Agents.tsx'
 import Upstreams from './pages/Upstreams.tsx'
+import Tenants from './pages/Tenants.tsx'
 import { useTenants } from './api/tenants.ts'
 import { useAgents } from './api/agents.ts'
 
-export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams'
+export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams' | 'tenants'
 
 const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
 
@@ -23,15 +25,28 @@ export const comingSoonPages: Set<Page> = COMING_SOON
   : new Set()
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('admin_token'))
   const [page, setPage] = useState<Page>('router')
   const [selectedAgent, setSelectedAgent] = useState<string>('all')
+  const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
 
   const { data: tenants } = useTenants()
-  const tenant = tenants?.[0]
+  const tenant = activeTenantId
+    ? tenants?.find(t => String(t.ID) === activeTenantId) ?? tenants?.[0]
+    : tenants?.[0]
   const tenantId = tenant ? String(tenant.ID) : null
   const tenantName = tenant?.Name || '—'
 
   const { data: agents = [] } = useAgents(tenantId)
+
+  const logout = () => {
+    localStorage.removeItem('admin_token')
+    setIsAuthenticated(false)
+  }
+
+  if (!isAuthenticated) {
+    return <Login onLogin={() => setIsAuthenticated(true)} />
+  }
 
   const cs = (page: Page, label: string, tag: string, node: ReactNode) =>
     comingSoonPages.has(page) ? <ComingSoon pageName={label} tag={tag} /> : node
@@ -45,6 +60,7 @@ export default function App() {
     agents:      <Agents tenantId={tenantId} agents={agents} />,
     'api-keys':  <APIKeys selectedAgent={selectedAgent} tenantId={tenantId} agents={agents} />,
     upstreams:   <Upstreams tenantId={tenantId} />,
+    tenants:     <Tenants activeTenantId={activeTenantId} onTenantSelect={(id) => { setActiveTenantId(id); setPage('router') }} />,
   }
 
   return (
@@ -65,6 +81,7 @@ export default function App() {
           onAgentChange={setSelectedAgent}
           tenantName={tenantName}
           agents={agents}
+          onLogout={logout}
         />
         <main className="relative flex-1 overflow-y-auto min-h-screen">
           {pages[page]}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
@@ -64,6 +65,46 @@ func SeedDefaultTenant(database *gorm.DB, upstreams []config.UpstreamConfig) err
 				slog.Info("seeded upstream", "key_id", u.KeyID, "tenant", tenant.Name)
 			}
 		}
+	}
+
+	return nil
+}
+
+// SeedAdminUser creates or updates the admin user from env config. Idempotent.
+func SeedAdminUser(database *gorm.DB, username, password string) error {
+	if password == "" {
+		slog.Warn("ADMIN_PASSWORD not set — admin login disabled")
+		return nil
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("seed: hash admin password: %w", err)
+	}
+
+	var existing AdminUser
+	err = database.Where("username = ?", username).First(&existing).Error
+	if err == gorm.ErrRecordNotFound {
+		user := AdminUser{
+			Username:     username,
+			PasswordHash: string(hash),
+			IsActive:     true,
+		}
+		if err := database.Create(&user).Error; err != nil {
+			return fmt.Errorf("seed: create admin user: %w", err)
+		}
+		slog.Info("seeded admin user", "username", username)
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("seed: check admin user: %w", err)
+	}
+
+	// Update password hash if the plaintext password has changed
+	if bcrypt.CompareHashAndPassword([]byte(existing.PasswordHash), []byte(password)) != nil {
+		if err := database.Model(&existing).Update("password_hash", string(hash)).Error; err != nil {
+			return fmt.Errorf("seed: update admin password: %w", err)
+		}
+		slog.Info("updated admin user password", "username", username)
 	}
 
 	return nil

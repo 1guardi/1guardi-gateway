@@ -7,8 +7,7 @@ export const apiClient = axios.create({
 })
 
 apiClient.interceptors.request.use((config) => {
-  // TODO: Replace with real auth token logic
-  const token = 'mock-auth-token'
+  const token = localStorage.getItem('admin_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

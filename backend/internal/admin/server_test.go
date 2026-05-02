@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,88 +14,169 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 )
 
+const testJWTSecret = "test-secret-for-unit-tests"
+
+func testCfg() *config.Config {
+	return &config.Config{
+		Admin: config.AdminConfig{
+			JWTSecret:   testJWTSecret,
+			JWTTTLHours: 1,
+		},
+	}
+}
+
 func setupTestDB(t *testing.T) *gorm.DB {
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-
-	err = db.AutoMigrate(database)
-	require.NoError(t, err)
-
+	require.NoError(t, db.AutoMigrate(database))
 	return database
+}
+
+// authRequest adds a valid JWT Bearer header to req.
+func authRequest(t *testing.T, req *http.Request) *http.Request {
+	token, err := auth.GenerateToken(1, "test-admin", testJWTSecret, time.Hour)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
+}
+
+func TestHandleLogin(t *testing.T) {
+	database := setupTestDB(t)
+	cfg := testCfg()
+	cfg.Admin.Username = "admin"
+	cfg.Admin.Password = "secret"
+	router := NewRouter(cfg, database, nil, nil, nil)
+
+	require.NoError(t, db.SeedAdminUser(database, "admin", "secret"))
+
+	body := `{"username":"admin","password":"secret"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]string
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp["token"])
+	assert.NotEmpty(t, resp["expires_at"])
+}
+
+func TestHandleLogin_WrongPassword(t *testing.T) {
+	database := setupTestDB(t)
+	require.NoError(t, db.SeedAdminUser(database, "admin", "secret"))
+	router := NewRouter(testCfg(), database, nil, nil, nil)
+
+	body := `{"username":"admin","password":"wrong"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestRequireAuth_Missing(t *testing.T) {
+	database := setupTestDB(t)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
 func TestTenantHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	cfg := &config.Config{}
-	router := NewRouter(cfg, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
-	// 1. Create a tenant
-	newTenant := db.Tenant{
-		Name:   "Test Tenant",
-		APIKey: "test-key-123",
-	}
-	body, _ := json.Marshal(newTenant)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	// Create tenant
+	body := `{"name":"Test Tenant"}`
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewBufferString(body)))
 	rr := httptest.NewRecorder()
-
 	router.ServeHTTP(rr, req)
-
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
 	var created db.Tenant
-	err := json.Unmarshal(rr.Body.Bytes(), &created)
-	require.NoError(t, err)
-	assert.Equal(t, newTenant.Name, created.Name)
-	assert.Equal(t, newTenant.APIKey, created.APIKey)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	assert.Equal(t, "Test Tenant", created.Name)
 	assert.NotZero(t, created.ID)
 
-	// 2. List tenants
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
+	// List tenants
+	req = authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil))
 	rr = httptest.NewRecorder()
-
 	router.ServeHTTP(rr, req)
-
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var tenants []db.Tenant
-	err = json.Unmarshal(rr.Body.Bytes(), &tenants)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &tenants))
 	assert.Len(t, tenants, 1)
 	assert.Equal(t, created.Name, tenants[0].Name)
 }
 
+func TestGetTenantHandler(t *testing.T) {
+	database := setupTestDB(t)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
+
+	// Create via DB directly
+	tenant := db.Tenant{Name: "direct", APIKey: "k"}
+	database.Create(&tenant)
+
+	req := authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/", nil))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "direct", resp["Name"])
+}
+
+func TestDeleteTenantHandler(t *testing.T) {
+	database := setupTestDB(t)
+	r := llmrouter.New([]config.UpstreamConfig{})
+	router := NewRouter(testCfg(), database, r, nil, nil)
+
+	tenant := db.Tenant{Name: "to-delete", APIKey: "k"}
+	database.Create(&tenant)
+
+	req := authRequest(t, httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/", nil))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNoContent, rr.Code)
+
+	var count int64
+	database.Unscoped().Model(&db.Tenant{}).Where("id = ?", 1).Count(&count)
+	assert.Equal(t, int64(1), count) // soft-deleted, still in DB
+}
+
 func TestHandleReady(t *testing.T) {
 	database := setupTestDB(t)
-	cfg := &config.Config{}
-	router := NewRouter(cfg, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	rr := httptest.NewRecorder()
-
 	router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-
 	var resp healthResponse
-	err := json.Unmarshal(rr.Body.Bytes(), &resp)
-	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, "ready", resp.Status)
 }
 
 func TestHandleListEndpoints_NilRouter(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil)
+	req := authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-
 	var endpoints []llmrouter.EndpointStatus
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &endpoints))
 	assert.Empty(t, endpoints)
@@ -105,14 +187,13 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 	r := llmrouter.New([]config.UpstreamConfig{
 		{KeyID: "openai-primary", Model: "gpt-4o", BaseURL: "https://api.openai.com", APIKey: "sk-test"},
 	})
-	handler := NewRouter(&config.Config{}, database, r, nil, nil)
+	handler := NewRouter(testCfg(), database, r, nil, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil)
+	req := authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-
 	var endpoints []llmrouter.EndpointStatus
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &endpoints))
 	require.Len(t, endpoints, 1)
@@ -123,41 +204,38 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 
 func TestAgentHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
-	// Setup Tenant
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
 
 	// Create Agent
-	agentBody := `{"Name":"agent1"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/agents", bytes.NewBufferString(agentBody))
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/agents", bytes.NewBufferString(`{"Name":"agent1"}`)))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
 	// List Agents
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/agents", nil)
+	req = authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/agents", nil))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var agents []db.Agent
-	json.Unmarshal(rr.Body.Bytes(), &agents)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &agents))
 	assert.Len(t, agents, 1)
 	assert.Equal(t, "agent1", agents[0].Name)
 }
 
 func TestKeyHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
 
 	// Create Key
-	keyBody := `{"name":"test-key"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/keys", bytes.NewBufferString(keyBody))
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/keys", bytes.NewBufferString(`{"name":"test-key"}`)))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusCreated, rr.Code)
@@ -166,17 +244,17 @@ func TestKeyHandlers(t *testing.T) {
 		ID  uint   `json:"ID"`
 		Key string `json:"key"`
 	}
-	json.Unmarshal(rr.Body.Bytes(), &created)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	assert.NotEmpty(t, created.Key)
 
 	// List Keys
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/keys", nil)
+	req = authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/keys", nil))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var keys []db.APIKey
-	json.Unmarshal(rr.Body.Bytes(), &keys)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &keys))
 	assert.Len(t, keys, 1)
 	assert.Equal(t, "test-key", keys[0].Name)
 	assert.NotEmpty(t, keys[0].Suffix)
@@ -184,7 +262,7 @@ func TestKeyHandlers(t *testing.T) {
 	assert.Empty(t, keys[0].KeyHash, "KeyHash should be hidden")
 
 	// Revoke Key
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/keys/1", nil)
+	req = authRequest(t, httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/keys/1", nil))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusNoContent, rr.Code)
@@ -197,42 +275,42 @@ func TestKeyHandlers(t *testing.T) {
 func TestUpstreamHandlers(t *testing.T) {
 	database := setupTestDB(t)
 	r := llmrouter.New([]config.UpstreamConfig{})
-	router := NewRouter(&config.Config{}, database, r, nil, nil)
+	router := NewRouter(testCfg(), database, r, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
 
 	// Create Upstream
-	upBody := `{"key_id":"test-ups","model":"test-model","base_url":"http://test","api_key":"sk-123"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/upstreams", bytes.NewBufferString(upBody))
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/tenants/1/upstreams",
+		bytes.NewBufferString(`{"key_id":"test-ups","model":"test-model","base_url":"http://test","api_key":"sk-123"}`)))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusCreated, rr.Code)
 
 	// List Upstreams
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/upstreams", nil)
+	req = authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/tenants/1/upstreams", nil))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var upstreams []db.Upstream
-	json.Unmarshal(rr.Body.Bytes(), &upstreams)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &upstreams))
 	assert.Len(t, upstreams, 1)
 	assert.Equal(t, "test-ups", upstreams[0].KeyID)
 
 	// Update Upstream
-	updateBody := `{"provider":"openai","models":["gpt-4o","gpt-4o-mini"],"base_url":"https://api.openai.com"}`
-	req = httptest.NewRequest(http.MethodPut, "/api/v1/tenants/1/upstreams/test-ups", bytes.NewBufferString(updateBody))
+	req = authRequest(t, httptest.NewRequest(http.MethodPut, "/api/v1/tenants/1/upstreams/test-ups",
+		bytes.NewBufferString(`{"provider":"openai","models":["gpt-4o","gpt-4o-mini"],"base_url":"https://api.openai.com"}`)))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var updated db.Upstream
-	json.Unmarshal(rr.Body.Bytes(), &updated)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &updated))
 	assert.Equal(t, "gpt-4o,gpt-4o-mini", updated.Models)
 
 	// Delete Upstream
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/upstreams/test-ups", nil)
+	req = authRequest(t, httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/1/upstreams/test-ups", nil))
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusNoContent, rr.Code)
@@ -240,21 +318,20 @@ func TestUpstreamHandlers(t *testing.T) {
 
 func TestNotImplementedAdminHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(&config.Config{}, database, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil)
 
 	endpoints := []struct {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/tenants/1"},
 		{http.MethodGet, "/api/v1/tenants/1/rules"},
 		{http.MethodPost, "/api/v1/tenants/1/rules"},
 	}
 
 	for _, ep := range endpoints {
-		req := httptest.NewRequest(ep.method, ep.path, nil)
+		req := authRequest(t, httptest.NewRequest(ep.method, ep.path, nil))
 		rr := httptest.NewRecorder()
 		router.ServeHTTP(rr, req)
-		assert.Equal(t, http.StatusNotImplemented, rr.Code)
+		assert.Equal(t, http.StatusNotImplemented, rr.Code, "path: %s", ep.path)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
@@ -46,37 +47,101 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 	mux.Use(middleware.RequestID)
 	mux.Use(middleware.Recoverer)
 
-	// Health + readiness probes (used by Docker / k8s)
+	// Health + readiness probes — public, no auth required
 	mux.Get("/health", handleHealth)
 	mux.Get("/ready", srv.handleReady)
 
 	mux.Route("/api/v1", func(r chi.Router) {
-		r.Get("/router/endpoints", srv.handleListEndpoints)
-		r.Get("/providers/{provider}/models", srv.handleListProviderModels)
+		// Public: login
+		r.Post("/auth/login", srv.handleLogin)
 
-		r.Get("/tenants", srv.handleListTenants)
-		r.Post("/tenants", srv.handleCreateTenant)
+		// Protected: everything else
+		r.Group(func(r chi.Router) {
+			r.Use(srv.requireAuth)
 
-		r.Route("/tenants/{tenantID}", func(r chi.Router) {
-			r.Get("/", srv.handleGetTenant)
-			r.Get("/rules", srv.handleListRules)
-			r.Post("/rules", srv.handleCreateRule)
+			r.Get("/router/endpoints", srv.handleListEndpoints)
+			r.Get("/providers/{provider}/models", srv.handleListProviderModels)
 
-			r.Get("/agents", srv.handleListAgents)
-			r.Post("/agents", srv.handleCreateAgent)
+			r.Get("/tenants", srv.handleListTenants)
+			r.Post("/tenants", srv.handleCreateTenant)
 
-			r.Get("/keys", srv.handleListKeys)
-			r.Post("/keys", srv.handleCreateKey)
-			r.Delete("/keys/{keyID}", srv.handleRevokeKey)
+			r.Route("/tenants/{tenantID}", func(r chi.Router) {
+				r.Get("/", srv.handleGetTenant)
+				r.Patch("/", srv.handleUpdateTenant)
+				r.Delete("/", srv.handleDeleteTenant)
 
-			r.Get("/upstreams", srv.handleListUpstreams)
-			r.Post("/upstreams", srv.handleCreateUpstream)
-			r.Put("/upstreams/{keyID}", srv.handleUpdateUpstream)
-			r.Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
+				r.Get("/rules", srv.handleListRules)
+				r.Post("/rules", srv.handleCreateRule)
+
+				r.Get("/agents", srv.handleListAgents)
+				r.Post("/agents", srv.handleCreateAgent)
+
+				r.Get("/keys", srv.handleListKeys)
+				r.Post("/keys", srv.handleCreateKey)
+				r.Delete("/keys/{keyID}", srv.handleRevokeKey)
+
+				r.Get("/upstreams", srv.handleListUpstreams)
+				r.Post("/upstreams", srv.handleCreateUpstream)
+				r.Put("/upstreams/{keyID}", srv.handleUpdateUpstream)
+				r.Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
+			})
 		})
 	})
 
 	return mux
+}
+
+// requireAuth validates the Bearer JWT on protected routes.
+func (s *Server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := r.Header.Get("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		token := strings.TrimPrefix(header, "Bearer ")
+		if _, err := auth.ValidateToken(token, s.cfg.Admin.JWTSecret); err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// handleLogin authenticates an admin user and returns a JWT.
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var user db.AdminUser
+	if err := s.db.Where("username = ? AND is_active = ?", req.Username, true).First(&user).Error; err != nil {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	ttl := time.Duration(s.cfg.Admin.JWTTTLHours) * time.Hour
+	token, err := auth.GenerateToken(user.ID, user.Username, s.cfg.Admin.JWTSecret, ttl)
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":      token,
+		"expires_at": time.Now().Add(ttl).UTC().Format(time.RFC3339),
+	})
 }
 
 func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
@@ -174,13 +239,44 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
-	var tenant db.Tenant
-	if err := json.NewDecoder(r.Body).Decode(&tenant); err != nil {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
 
+	key, hash, suffix, err := auth.GenerateAPIKey()
+	if err != nil {
+		http.Error(w, "failed to generate api key", http.StatusInternalServerError)
+		return
+	}
+
+	tenant := db.Tenant{
+		Name:        req.Name,
+		Description: req.Description,
+		APIKey:      key,
+	}
 	if err := s.db.Create(&tenant).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	apiKey := db.APIKey{
+		Name:     "Default Key",
+		KeyHash:  hash,
+		Prefix:   auth.KeyPrefix,
+		Suffix:   suffix,
+		TenantID: tenant.ID,
+		IsActive: true,
+	}
+	if err := s.db.Create(&apiKey).Error; err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -188,6 +284,101 @@ func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(tenant)
+}
+
+func (s *Server) handleGetTenant(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+
+	var tenant db.Tenant
+	if err := s.db.First(&tenant, tenantID).Error; err != nil {
+		http.Error(w, "tenant not found", http.StatusNotFound)
+		return
+	}
+
+	var agentCount, keyCount int64
+	s.db.Model(&db.Agent{}).Where("tenant_id = ?", tenantID).Count(&agentCount)
+	s.db.Model(&db.APIKey{}).Where("tenant_id = ? AND is_active = ?", tenantID, true).Count(&keyCount)
+
+	resp := struct {
+		db.Tenant
+		AgentCount int64 `json:"agent_count"`
+		KeyCount   int64 `json:"key_count"`
+	}{
+		Tenant:     tenant,
+		AgentCount: agentCount,
+		KeyCount:   keyCount,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleUpdateTenant(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var tenant db.Tenant
+	if err := s.db.First(&tenant, tenantID).Error; err != nil {
+		http.Error(w, "tenant not found", http.StatusNotFound)
+		return
+	}
+
+	updates := map[string]any{}
+	if req.Name != "" {
+		updates["name"] = req.Name
+	}
+	if req.Description != "" {
+		updates["description"] = req.Description
+	}
+
+	if err := s.db.Model(&tenant).Updates(updates).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tenant)
+}
+
+func (s *Server) handleDeleteTenant(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+
+	var tenant db.Tenant
+	if err := s.db.First(&tenant, tenantID).Error; err != nil {
+		http.Error(w, "tenant not found", http.StatusNotFound)
+		return
+	}
+
+	// Cascade: remove upstreams from live router
+	if s.llmRouter != nil {
+		var upstreams []db.Upstream
+		s.db.Where("tenant_id = ?", tenantID).Find(&upstreams)
+		for _, u := range upstreams {
+			s.llmRouter.Remove(uint(tenantID), u.KeyID)
+		}
+	}
+
+	// Soft-delete related records then the tenant
+	s.db.Where("tenant_id = ?", tenantID).Delete(&db.Upstream{})
+	s.db.Where("tenant_id = ?", tenantID).Delete(&db.APIKey{})
+	s.db.Where("tenant_id = ?", tenantID).Delete(&db.Agent{})
+	if err := s.db.Delete(&tenant).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
@@ -293,10 +484,6 @@ func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleGetTenant(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
-
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
@@ -321,8 +508,8 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		KeyID    string   `json:"key_id"`
 		Provider string   `json:"provider"`
-		Models   []string `json:"models"` // Changed to slice
-		Model    string   `json:"model"`  // Keep for backward compatibility
+		Models   []string `json:"models"`
+		Model    string   `json:"model"` // backward compat
 		BaseURL  string   `json:"base_url"`
 		APIKey   string   `json:"api_key"`
 	}
@@ -335,7 +522,6 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 		req.Provider = "openai"
 	}
 
-	// Support both single model and models array
 	if len(req.Models) == 0 && req.Model != "" {
 		req.Models = []string{req.Model}
 	}
@@ -359,7 +545,6 @@ func (s *Server) handleCreateUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update live router with each model
 	if s.llmRouter != nil {
 		for _, model := range req.Models {
 			s.llmRouter.Add(config.UpstreamConfig{
@@ -399,7 +584,6 @@ func (s *Server) handleUpdateUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update fields
 	if req.Provider != "" {
 		up.Provider = req.Provider
 	}
@@ -418,7 +602,6 @@ func (s *Server) handleUpdateUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update live router: remove old and add new
 	if s.llmRouter != nil {
 		s.llmRouter.Remove(uint(tenantID), keyID)
 		for _, model := range req.Models {
@@ -452,7 +635,6 @@ func (s *Server) handleDeleteUpstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update live router
 	if s.llmRouter != nil {
 		s.llmRouter.Remove(uint(tenantID), keyID)
 	}

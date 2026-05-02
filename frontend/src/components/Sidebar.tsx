@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Sun, Moon, Monitor } from 'lucide-react'
+import { Sun, Moon, Monitor, LogOut } from 'lucide-react'
 import { useTheme } from './theme-provider.tsx'
 import type { Page } from '../App.tsx'
 import type { AgentSummary } from '../api/agents.ts'
@@ -10,6 +10,7 @@ import { comingSoonPages } from '../App.tsx'
 interface NavItem { id: Page; label: string; tag: string; letter: string }
 
 const navItems: NavItem[] = [
+  { id: 'tenants',    label: 'Tenants',    tag: 'MULTI-TENANT', letter: 'N' },
   { id: 'router',     label: 'Router',     tag: 'ATC',          letter: 'R' },
   { id: 'agents',     label: 'Agents',     tag: 'FLEET',        letter: 'A' },
   { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',  letter: 'K' },
@@ -27,9 +28,10 @@ interface SidebarProps {
   onAgentChange: (a: string) => void
   tenantName: string
   agents: AgentSummary[]
+  onLogout: () => void
 }
 
-export default function Sidebar({ current, onChange, agent, onAgentChange, tenantName, agents }: SidebarProps) {
+export default function Sidebar({ current, onChange, agent, onAgentChange, tenantName, agents, onLogout }: SidebarProps) {
   const { theme, setTheme } = useTheme()
 
   return (
@@ -112,7 +114,7 @@ export default function Sidebar({ current, onChange, agent, onAgentChange, tenan
 
       <Separator className="bg-sidebar-border" />
 
-      {/* Theme Toggle & Bottom stats */}
+      {/* Theme Toggle & Bottom */}
       <div className="px-4 py-4 space-y-4">
         <div className="flex items-center justify-between bg-muted/50 p-1 rounded-lg border border-sidebar-border">
           {[
@@ -143,6 +145,15 @@ export default function Sidebar({ current, onChange, agent, onAgentChange, tenan
             </div>
           ))}
         </div>
+
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-2 h-8 px-2 text-muted-foreground/60 hover:text-foreground"
+          onClick={onLogout}
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span className="font-mono text-[10px] tracking-widest">SIGN OUT</span>
+        </Button>
       </div>
     </aside>
   )

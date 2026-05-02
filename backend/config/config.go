@@ -1,7 +1,10 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -13,9 +16,17 @@ type Config struct {
 	AdminPort int
 	Telemetry TelemetryConfig
 	Auth      APIKeyConfig
+	Admin     AdminConfig
 	Redis     RedisConfig
 	Postgres  PostgresConfig
 	Upstreams []UpstreamConfig
+}
+
+type AdminConfig struct {
+	Username    string
+	Password    string
+	JWTSecret   string
+	JWTTTLHours int
 }
 
 // UpstreamConfig describes one LLM endpoint the gateway can route to.
@@ -58,6 +69,12 @@ func Load() (*Config, error) {
 		Auth: APIKeyConfig{
 			CacheTTL: time.Duration(intEnv("API_KEY_CACHE_TTL_SEC", 300)) * time.Second,
 		},
+		Admin: AdminConfig{
+			Username:    env("ADMIN_USERNAME", "admin"),
+			Password:    env("ADMIN_PASSWORD", ""),
+			JWTSecret:   loadJWTSecret(),
+			JWTTTLHours: intEnv("JWT_TTL_HOURS", 24),
+		},
 		Redis: RedisConfig{
 			Addr: env("REDIS_ADDR", "localhost:6379"),
 		},
@@ -86,6 +103,18 @@ func loadUpstreams() []UpstreamConfig {
 		})
 	}
 	return upstreams
+}
+
+func loadJWTSecret() string {
+	if s := os.Getenv("JWT_SECRET"); s != "" {
+		return s
+	}
+	slog.Warn("JWT_SECRET not set — generating random secret; tokens invalidated on restart")
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("failed to generate JWT secret: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 func env(key, fallback string) string {

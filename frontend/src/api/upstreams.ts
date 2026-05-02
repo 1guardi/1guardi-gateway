@@ -37,21 +37,27 @@ export function useCreateUpstream(tenantId: string | null) {
   })
 }
 
-export function useProviderModels(provider: string, apiKey: string, tenantId?: string | null, upstreamKeyId?: string | null) {
+export function useProviderModels(provider: string, apiKey: string, tenantId?: string | null, upstreamKeyId?: string | null, baseUrl?: string) {
   return useQuery({
-    queryKey: ['provider-models', provider, apiKey, tenantId, upstreamKeyId],
+    queryKey: ['provider-models', provider, apiKey, tenantId, upstreamKeyId, baseUrl],
     queryFn: async () => {
       if (!provider) return []
-      const { data } = await apiClient.get<string[]>(`/providers/${provider}/models`, {
-        params: { 
-          apiKey,
-          tenantID: tenantId,
-          upstreamKeyID: upstreamKeyId
-        },
+      const { data } = await apiClient.post<string[]>(`/providers/${provider}/models`, {
+        apiKey,
+        tenantID: tenantId,
+        upstreamKeyID: upstreamKeyId,
+        baseURL: baseUrl
       })
       return data
     },
-    enabled: !!provider && (!!apiKey || !!upstreamKeyId || provider === 'openai' || provider === 'anthropic' || provider === 'gemini'),
+    enabled: !!provider && (
+      !!apiKey || 
+      !!upstreamKeyId || 
+      provider === 'openai' || 
+      provider === 'anthropic' || 
+      provider === 'gemini' ||
+      (provider === 'openai-compatible' && !!baseUrl)
+    ),
   })
 }
 

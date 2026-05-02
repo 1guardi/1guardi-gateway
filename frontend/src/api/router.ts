@@ -4,6 +4,7 @@ import { apiClient } from './client'
 export interface RouteEndpoint {
   id: string
   label: string
+  provider: string
   model: string
   tenant_id: number
   ttft_p50_ms: number

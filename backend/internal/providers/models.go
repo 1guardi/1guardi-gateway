@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
@@ -23,10 +25,10 @@ func NewModelProviderService(redis *redis.Client) *ModelProviderService {
 	}
 }
 
-func (s *ModelProviderService) GetModels(ctx context.Context, provider, apiKey string) ([]string, error) {
-	// Cache by provider and a hash of the API key
+func (s *ModelProviderService) GetModels(ctx context.Context, provider, apiKey, baseURL string) ([]string, error) {
+	// Cache by provider, baseURL and a hash of the API key
 	hash := auth.HashKey(apiKey)
-	cacheKey := fmt.Sprintf("models:cache:%s:%s", provider, hash)
+	cacheKey := fmt.Sprintf("models:cache:%s:%s:%s", provider, baseURL, hash)
 
 	if s.redis != nil {
 		val, err := s.redis.Get(ctx, cacheKey).Result()
@@ -42,8 +44,8 @@ func (s *ModelProviderService) GetModels(ctx context.Context, provider, apiKey s
 	var err error
 
 	switch provider {
-	case "openai":
-		models, err = s.fetchOpenAIModels(ctx, apiKey)
+	case "openai", "openai-compatible":
+		models, err = s.fetchOpenAIModels(ctx, apiKey, baseURL)
 	case "gemini":
 		models, err = s.fetchGeminiModels(ctx, apiKey)
 	case "anthropic":
@@ -65,8 +67,19 @@ func (s *ModelProviderService) GetModels(ctx context.Context, provider, apiKey s
 	return models, nil
 }
 
-func (s *ModelProviderService) fetchOpenAIModels(ctx context.Context, apiKey string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.openai.com/v1/models", nil)
+func (s *ModelProviderService) fetchOpenAIModels(ctx context.Context, apiKey, baseURL string) ([]string, error) {
+	u := "https://api.openai.com/v1/models"
+	if baseURL != "" {
+		baseURL = strings.TrimSuffix(baseURL, "/")
+		if strings.HasSuffix(baseURL, "/v1/models") {
+			u = baseURL
+		} else if strings.HasSuffix(baseURL, "/v1") {
+			u = fmt.Sprintf("%s/models", baseURL)
+		} else {
+			u = fmt.Sprintf("%s/v1/models", baseURL)
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +93,11 @@ func (s *ModelProviderService) fetchOpenAIModels(ctx context.Context, apiKey str
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("openai api error: %s", resp.Status)
+	}
+
+	if !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("provider returned non-json response: %s", string(body))
 	}
 
 	var result struct {

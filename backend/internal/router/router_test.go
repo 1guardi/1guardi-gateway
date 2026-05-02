@@ -265,8 +265,8 @@ func TestRouter_List_Empty(t *testing.T) {
 
 func TestRouter_List_ReturnsAllEndpoints(t *testing.T) {
 	r := New([]config.UpstreamConfig{
-		{KeyID: "ep-a", Model: "gpt-4o", BaseURL: "http://a", APIKey: "k1"},
-		{KeyID: "ep-b", Model: "claude-3", BaseURL: "http://b", APIKey: "k2"},
+		{KeyID: "ep-a", Provider: "openai", Model: "gpt-4o", BaseURL: "http://a", APIKey: "k1"},
+		{KeyID: "ep-b", Provider: "anthropic", Model: "claude-3", BaseURL: "http://b", APIKey: "k2"},
 	})
 	r.endpoints[0].RecordSuccess(80, 50)
 	r.endpoints[1].RecordSuccess(200, 30)
@@ -276,6 +276,7 @@ func TestRouter_List_ReturnsAllEndpoints(t *testing.T) {
 
 	a := list[0]
 	assert.Equal(t, "ep-a", a.ID)
+	assert.Equal(t, "openai", a.Provider)
 	assert.Equal(t, "gpt-4o", a.Model)
 	assert.Equal(t, "CLOSED", a.CircuitState)
 	assert.InDelta(t, 80.0, a.TTFTP50Ms, 0.01)

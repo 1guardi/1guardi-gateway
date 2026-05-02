@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 			r.Use(srv.requireAuth)
 
 			r.Get("/router/endpoints", srv.handleListEndpoints)
-			r.Get("/providers/{provider}/models", srv.handleListProviderModels)
+			r.Post("/providers/{provider}/models", srv.handleListProviderModels)
 			r.Get("/roles", srv.handleListRoles)
 			r.Get("/users", srv.handleListUsers)
 
@@ -214,9 +215,35 @@ func (s *Server) handleListEndpoints(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request) {
 	provider := chi.URLParam(r, "provider")
-	apiKey := r.URL.Query().Get("apiKey")
-	tenantIDStr := r.URL.Query().Get("tenantID")
-	upstreamKeyID := r.URL.Query().Get("upstreamKeyID")
+
+	var req struct {
+		APIKey        string `json:"apiKey"`
+		TenantID      string `json:"tenantID"`
+		UpstreamKeyID string `json:"upstreamKeyID"`
+		BaseURL       string `json:"baseURL"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		// Ignore error if body is empty for backward compatibility
+	}
+
+	apiKey := req.APIKey
+	tenantIDStr := req.TenantID
+	upstreamKeyID := req.UpstreamKeyID
+	baseURL := req.BaseURL
+
+	// Fallback to query params if not in body
+	if apiKey == "" {
+		apiKey = r.URL.Query().Get("apiKey")
+	}
+	if tenantIDStr == "" {
+		tenantIDStr = r.URL.Query().Get("tenantID")
+	}
+	if upstreamKeyID == "" {
+		upstreamKeyID = r.URL.Query().Get("upstreamKeyID")
+	}
+	if baseURL == "" {
+		baseURL = r.URL.Query().Get("baseURL")
+	}
 
 	// Fallback to database key if tenant and key ID are provided
 	if apiKey == "" && tenantIDStr != "" && upstreamKeyID != "" {
@@ -224,6 +251,9 @@ func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request
 		var up db.Upstream
 		if err := s.db.Where("tenant_id = ? AND key_id = ?", tid, upstreamKeyID).First(&up).Error; err == nil {
 			apiKey = up.APIKey
+			if baseURL == "" {
+				baseURL = up.BaseURL
+			}
 		}
 	}
 
@@ -232,6 +262,9 @@ func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request
 		for _, u := range s.cfg.Upstreams {
 			if u.Provider == provider && u.APIKey != "" {
 				apiKey = u.APIKey
+				if baseURL == "" {
+					baseURL = u.BaseURL
+				}
 				break
 			}
 		}
@@ -242,7 +275,7 @@ func (s *Server) handleListProviderModels(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	models, err := s.modelsSvc.GetModels(r.Context(), provider, apiKey)
+	models, err := s.modelsSvc.GetModels(r.Context(), provider, apiKey, baseURL)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch models: %v", err), http.StatusInternalServerError)
 		return

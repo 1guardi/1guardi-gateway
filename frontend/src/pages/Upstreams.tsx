@@ -67,7 +67,8 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
     newProvider, 
     newAPIKey,
     tenantId,
-    isEditing ? editingKeyId : null
+    isEditing ? editingKeyId : null,
+    newBaseURL
   )
   const filteredAvailableModels = availableModels.filter(m => 
     m.toLowerCase().includes(modelSearch.toLowerCase())
@@ -208,6 +209,12 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
                   </SelectContent>
                 </Select>
               </div>
+              {newProvider === 'openai-compatible' && (
+                <div className="grid gap-2">
+                  <Label htmlFor="baseUrl" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Base URL</Label>
+                  <Input id="baseUrl" value={newBaseURL} onChange={(e) => setNewBaseURL(e.target.value)} className="font-mono text-xs" />
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="apiKey" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">API Key</Label>
                 <Input 
@@ -255,19 +262,8 @@ export default function Upstreams({ tenantId }: UpstreamsProps) {
                     <p className="text-[10px] font-mono text-muted-foreground p-2 text-center">Enter API key to load models</p>
                   )}
                 </div>
-                {selectedModels.length > 0 && (
-                  <p className="text-[10px] font-mono text-muted-foreground italic">
-                    {selectedModels.length} models selected
-                  </p>
-                )}
-              </div>
+             </div>
 
-              {newProvider === 'openai-compatible' && (
-                <div className="grid gap-2">
-                  <Label htmlFor="baseUrl" className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Base URL</Label>
-                  <Input id="baseUrl" value={newBaseURL} onChange={(e) => setNewBaseURL(e.target.value)} className="font-mono text-xs" />
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={resetForm} className="font-mono text-xs">Cancel</Button>

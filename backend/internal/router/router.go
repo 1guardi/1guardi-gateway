@@ -15,6 +15,7 @@ var ErrNoEndpoint = errors.New("no available endpoint for model")
 type EndpointStatus struct {
 	ID           string  `json:"id"`
 	Label        string  `json:"label"`
+	Provider     string  `json:"provider"`
 	Model        string  `json:"model"`
 	TenantID     uint    `json:"tenant_id"`
 	TTFTP50Ms    float64 `json:"ttft_p50_ms"`
@@ -52,6 +53,7 @@ func (r *Router) List() []EndpointStatus {
 		out[i] = EndpointStatus{
 			ID:           e.KeyID(),
 			Label:        e.KeyID(),
+			Provider:     e.Provider(),
 			Model:        e.Model(),
 			TenantID:     e.TenantID(),
 			TTFTP50Ms:    e.TTFTP50(),

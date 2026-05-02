@@ -13,15 +13,25 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type ModelProvider interface {
+	GetModels(ctx context.Context, provider, apiKey, baseURL string) ([]string, error)
+}
+
 type ModelProviderService struct {
-	httpClient *http.Client
-	redis      *redis.Client
+	httpClient       *http.Client
+	redis            *redis.Client
+	openaiBaseURL    string
+	geminiBaseURL    string
+	anthropicBaseURL string
 }
 
 func NewModelProviderService(redis *redis.Client) *ModelProviderService {
 	return &ModelProviderService{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		redis:      redis,
+		httpClient:       &http.Client{Timeout: 10 * time.Second},
+		redis:            redis,
+		openaiBaseURL:    "https://api.openai.com",
+		geminiBaseURL:    "https://generativelanguage.googleapis.com",
+		anthropicBaseURL: "https://api.anthropic.com",
 	}
 }
 
@@ -68,7 +78,7 @@ func (s *ModelProviderService) GetModels(ctx context.Context, provider, apiKey, 
 }
 
 func (s *ModelProviderService) fetchOpenAIModels(ctx context.Context, apiKey, baseURL string) ([]string, error) {
-	u := "https://api.openai.com/v1/models"
+	u := s.openaiBaseURL + "/v1/models"
 	if baseURL != "" {
 		baseURL = strings.TrimSuffix(baseURL, "/")
 		if strings.HasSuffix(baseURL, "/v1/models") {
@@ -118,7 +128,7 @@ func (s *ModelProviderService) fetchOpenAIModels(ctx context.Context, apiKey, ba
 
 func (s *ModelProviderService) fetchGeminiModels(ctx context.Context, apiKey string) ([]string, error) {
 	// Gemini list models endpoint
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
+	url := fmt.Sprintf("%s/v1beta/models?key=%s", s.geminiBaseURL, apiKey)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -152,7 +162,8 @@ func (s *ModelProviderService) fetchGeminiModels(ctx context.Context, apiKey str
 }
 
 func (s *ModelProviderService) fetchAnthropicModels(ctx context.Context, apiKey string) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/v1/models", nil)
+	u := fmt.Sprintf("%s/v1/models", s.anthropicBaseURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -200,6 +200,50 @@ func TestHandleChatCompletions_Upstream5xx(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "server_error")
 }
 
+func TestHandleAnthropicMessages(t *testing.T) {
+	const anthropicResp = `{"id":"msg_123","type":"message","role":"assistant","content":[{"type":"text","text":"Hi from Anthropic"}],"model":"claude-3-opus-20240229","usage":{"input_tokens":10,"output_tokens":20}}`
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "test-key", r.Header.Get("x-api-key"))
+		assert.Equal(t, "2023-06-01", r.Header.Get("anthropic-version"))
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		assert.Equal(t, "/v1/messages", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, anthropicResp)
+	}))
+	defer upstream.Close()
+
+	srv := serverWithUpstream(t, upstream.URL, "claude-3-opus", "anthropic")
+	body := `{"model":"claude-3-opus","messages":[{"role":"user","content":"hello"}],"max_tokens":1024}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	srv.handleAnthropicMessages(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, anthropicResp, rr.Body.String())
+}
+
+func TestHandleAnthropicMessages_Validation(t *testing.T) {
+	srv := testServer()
+
+	t.Run("invalid json", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{invalid`))
+		rr := httptest.NewRecorder()
+		srv.handleAnthropicMessages(rr, req)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+	})
+
+	t.Run("missing model", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"messages":[]}`))
+		rr := httptest.NewRecorder()
+		srv.handleAnthropicMessages(rr, req)
+		assert.Equal(t, http.StatusBadRequest, rr.Code)
+		assert.Contains(t, rr.Body.String(), "model is required")
+	})
+}
+
 func TestHandleChatCompletions_AnthropicTranslation(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/messages", r.URL.Path)

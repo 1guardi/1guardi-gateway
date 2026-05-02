@@ -51,6 +51,22 @@ func TestAuthenticate(t *testing.T) {
 	middleware.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
+
+	t.Run("x-api-key header", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		req.Header.Set("x-api-key", rawKey)
+		req.Header.Set("X-Thread-Id", "thread-789")
+		rr := httptest.NewRecorder()
+		middleware.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		rr := httptest.NewRecorder()
+		middleware.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	})
 }
 
 func TestAuthenticate_ProjectKeyWithHeader(t *testing.T) {

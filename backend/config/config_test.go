@@ -116,3 +116,20 @@ func TestIntEnv(t *testing.T) {
 		assert.Equal(t, 10, val)
 	})
 }
+
+func TestLoadJWTSecret(t *testing.T) {
+	t.Run("from env", func(t *testing.T) {
+		t.Setenv("JWT_SECRET", "explicit-secret")
+		assert.Equal(t, "explicit-secret", loadJWTSecret())
+	})
+
+	t.Run("randomly generated", func(t *testing.T) {
+		t.Setenv("JWT_SECRET", "")
+		s1 := loadJWTSecret()
+		s2 := loadJWTSecret()
+		assert.NotEmpty(t, s1)
+		assert.NotEmpty(t, s2)
+		assert.NotEqual(t, s1, s2)
+		assert.Len(t, s1, 64) // 32 bytes hex encoded
+	})
+}

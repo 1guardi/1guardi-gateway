@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -157,16 +158,27 @@ func TestDeleteTenantHandler(t *testing.T) {
 
 func TestHandleReady(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil)
+	srv := &Server{db: database}
 
-	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	t.Run("ready", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+		rr := httptest.NewRecorder()
+		srv.handleReady(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+		var resp healthResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+		assert.Equal(t, "ready", resp.Status)
+	})
 
-	assert.Equal(t, http.StatusOK, rr.Code)
-	var resp healthResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	assert.Equal(t, "ready", resp.Status)
+	t.Run("db failure", func(t *testing.T) {
+		// Create a server with a closed DB to simulate failure
+		sqlDB, _ := database.DB()
+		sqlDB.Close()
+		req := httptest.NewRequest(http.MethodGet, "/ready", nil)
+		rr := httptest.NewRecorder()
+		srv.handleReady(rr, req)
+		assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+	})
 }
 
 func TestHandleListEndpoints_NilRouter(t *testing.T) {
@@ -486,17 +498,27 @@ func TestHealth(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
+type mockModelProvider struct {
+	models []string
+	err    error
+}
+
+func (m *mockModelProvider) GetModels(ctx context.Context, provider, apiKey, baseURL string) ([]string, error) {
+	return m.models, m.err
+}
+
 func TestListProviderModels(t *testing.T) {
 	database := setupTestDB(t)
-	handler := NewRouter(testCfg(), database, nil, nil, nil)
+	mock := &mockModelProvider{models: []string{"gpt-4", "gpt-3.5-turbo"}}
+	handler := NewRouter(testCfg(), database, nil, nil, mock)
 
-	// This will fail because modelsSvc is nil in NewRouter call above,
-	// but let's see if we can hit the param parsing logic.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/openai/models?apiKey=test", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/openai/models", bytes.NewBufferString(`{"apiKey":"test"}`))
 	req = authRequest(t, req)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// It should error out because modelsSvc is nil or fetch fails
-	assert.NotEqual(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	var resp []string
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.ElementsMatch(t, []string{"gpt-4", "gpt-3.5-turbo"}, resp)
 }

@@ -29,13 +29,13 @@ type Server struct {
 	cfg       *config.Config
 	llmRouter *llmrouter.Router
 	redis     *redis.Client
-	modelsSvc *providers.ModelProviderService
+	modelsSvc providers.ModelProvider
 }
 
 // NewRouter builds the internal admin API handler.
 // This port should never be exposed publicly — bind to 127.0.0.1 in production
 // or keep it cluster-internal in Kubernetes.
-func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc *providers.ModelProviderService) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc providers.ModelProvider) http.Handler {
 	srv := &Server{
 		db:        database,
 		cfg:       cfg,

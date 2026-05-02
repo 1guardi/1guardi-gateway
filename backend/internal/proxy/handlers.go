@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -52,6 +53,18 @@ type chatResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
+}
+
+type openAIModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+type listModelsResponse struct {
+	Object string        `json:"object"`
+	Data   []openAIModel `json:"data"`
 }
 
 // modelPrice holds per-million-token USD pricing.
@@ -402,16 +415,51 @@ func (s *Server) extractUsage(provider string, body []byte) (int, int) {
 }
 
 // handleCompletions handles POST /v1/completions (legacy).
-func handleCompletions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented", "api_error")
 }
 
 // handleEmbeddings handles POST /v1/embeddings.
-func handleEmbeddings(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented", "api_error")
 }
 
 // handleListModels handles GET /v1/models.
-func handleListModels(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "not implemented", "api_error")
+func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
+	tc := TenantCtx(r.Context())
+	var tenantID uint
+	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
+
+	endpoints := s.router.List()
+
+	// Deduplicate models by ID for this tenant.
+	uniqueModels := make(map[string]openAIModel)
+	for _, e := range endpoints {
+		if e.TenantID == tenantID {
+			if _, ok := uniqueModels[e.Model]; !ok {
+				uniqueModels[e.Model] = openAIModel{
+					ID:      e.Model,
+					Object:  "model",
+					Created: time.Now().Unix(), // Simple fallback
+					OwnedBy: "ai-gateway",
+				}
+			}
+		}
+	}
+
+	data := make([]openAIModel, 0, len(uniqueModels))
+	for _, m := range uniqueModels {
+		data = append(data, m)
+	}
+
+	// Sort by ID for stability
+	sort.Slice(data, func(i, j int) bool {
+		return data[i].ID < data[j].ID
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(listModelsResponse{
+		Object: "list",
+		Data:   data,
+	})
 }

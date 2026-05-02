@@ -52,9 +52,9 @@ func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, 
 
 	// OpenAI-compatible surface
 	mux.Post("/v1/chat/completions", srv.handleChatCompletions)
-	mux.Post("/v1/completions", handleCompletions)
-	mux.Post("/v1/embeddings", handleEmbeddings)
-	mux.Get("/v1/models", handleListModels)
+	mux.Post("/v1/completions", srv.handleCompletions)
+	mux.Post("/v1/embeddings", srv.handleEmbeddings)
+	mux.Get("/v1/models", srv.handleListModels)
 
 	return otelhttp.NewHandler(mux, "proxy",
 		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),

@@ -386,20 +386,13 @@ func TestCalcCost_ZeroTokens(t *testing.T) {
 func TestHandleCompletions_NotImplemented(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/completions", nil)
 	rr := httptest.NewRecorder()
-	handleCompletions(rr, req)
+	testServer().handleCompletions(rr, req)
 	assert.Equal(t, http.StatusNotImplemented, rr.Code)
 }
 
 func TestHandleEmbeddings_NotImplemented(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", nil)
 	rr := httptest.NewRecorder()
-	handleEmbeddings(rr, req)
-	assert.Equal(t, http.StatusNotImplemented, rr.Code)
-}
-
-func TestHandleListModels_NotImplemented(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	rr := httptest.NewRecorder()
-	handleListModels(rr, req)
+	testServer().handleEmbeddings(rr, req)
 	assert.Equal(t, http.StatusNotImplemented, rr.Code)
 }

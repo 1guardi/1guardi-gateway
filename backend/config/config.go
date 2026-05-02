@@ -23,7 +23,7 @@ type Config struct {
 }
 
 type AdminConfig struct {
-	Username    string
+	Email       string
 	Password    string
 	JWTSecret   string
 	JWTTTLHours int
@@ -70,7 +70,7 @@ func Load() (*Config, error) {
 			CacheTTL: time.Duration(intEnv("API_KEY_CACHE_TTL_SEC", 300)) * time.Second,
 		},
 		Admin: AdminConfig{
-			Username:    env("ADMIN_USERNAME", "admin"),
+			Email:       env("ADMIN_EMAIL", "admin@example.com"),
 			Password:    env("ADMIN_PASSWORD", ""),
 			JWTSecret:   loadJWTSecret(),
 			JWTTTLHours: intEnv("JWT_TTL_HOURS", 24),

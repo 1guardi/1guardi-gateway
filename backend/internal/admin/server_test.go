@@ -39,7 +39,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 // authRequest adds a valid JWT Bearer header to req.
 func authRequest(t *testing.T, req *http.Request) *http.Request {
-	token, err := auth.GenerateToken(1, "test-admin", testJWTSecret, time.Hour)
+	token, err := auth.GenerateToken(1, "Test User", "test-admin@example.com", true, testJWTSecret, time.Hour)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	return req
@@ -48,13 +48,13 @@ func authRequest(t *testing.T, req *http.Request) *http.Request {
 func TestHandleLogin(t *testing.T) {
 	database := setupTestDB(t)
 	cfg := testCfg()
-	cfg.Admin.Username = "admin"
+	cfg.Admin.Email = "admin@example.com"
 	cfg.Admin.Password = "secret"
 	router := NewRouter(cfg, database, nil, nil, nil)
 
-	require.NoError(t, db.SeedAdminUser(database, "admin", "secret"))
+	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
 
-	body := `{"username":"admin","password":"secret"}`
+	body := `{"email":"admin@example.com","password":"secret"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
@@ -68,10 +68,10 @@ func TestHandleLogin(t *testing.T) {
 
 func TestHandleLogin_WrongPassword(t *testing.T) {
 	database := setupTestDB(t)
-	require.NoError(t, db.SeedAdminUser(database, "admin", "secret"))
+	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
 	router := NewRouter(testCfg(), database, nil, nil, nil)
 
-	body := `{"username":"admin","password":"wrong"}`
+	body := `{"email":"admin@example.com","password":"wrong"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)

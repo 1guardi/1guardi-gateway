@@ -70,8 +70,8 @@ func SeedDefaultTenant(database *gorm.DB, upstreams []config.UpstreamConfig) err
 	return nil
 }
 
-// SeedAdminUser creates or updates the admin user from env config. Idempotent.
-func SeedAdminUser(database *gorm.DB, username, password string) error {
+// SeedSuperAdmin creates or updates the super admin user from env config. Idempotent.
+func SeedSuperAdmin(database *gorm.DB, email, password string) error {
 	if password == "" {
 		slog.Warn("ADMIN_PASSWORD not set — admin login disabled")
 		return nil
@@ -82,21 +82,29 @@ func SeedAdminUser(database *gorm.DB, username, password string) error {
 		return fmt.Errorf("seed: hash admin password: %w", err)
 	}
 
-	var existing AdminUser
-	err = database.Where("username = ?", username).First(&existing).Error
+	var existing User
+	err = database.Where("email = ?", email).First(&existing).Error
 	if err == gorm.ErrRecordNotFound {
-		user := AdminUser{
-			Username:     username,
+		user := User{
+			Name:         "Super Admin",
+			Email:        email,
 			PasswordHash: string(hash),
-			IsActive:     true,
+			IsSuperAdmin: true,
 		}
 		if err := database.Create(&user).Error; err != nil {
 			return fmt.Errorf("seed: create admin user: %w", err)
 		}
-		slog.Info("seeded admin user", "username", username)
+		slog.Info("seeded super admin user", "email", email)
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("seed: check admin user: %w", err)
+	}
+
+	// Ensure IsSuperAdmin is set
+	if !existing.IsSuperAdmin {
+		if err := database.Model(&existing).Update("is_super_admin", true).Error; err != nil {
+			return fmt.Errorf("seed: update admin user is_super_admin: %w", err)
+		}
 	}
 
 	// Update password hash if the plaintext password has changed
@@ -104,8 +112,55 @@ func SeedAdminUser(database *gorm.DB, username, password string) error {
 		if err := database.Model(&existing).Update("password_hash", string(hash)).Error; err != nil {
 			return fmt.Errorf("seed: update admin password: %w", err)
 		}
-		slog.Info("updated admin user password", "username", username)
+		slog.Info("updated super admin user password", "email", email)
 	}
 
+	return nil
+}
+
+// SeedRBAC creates default roles and permissions. Idempotent.
+func SeedRBAC(database *gorm.DB) error {
+	permissions := []string{
+		"tenant.read",
+		"tenant.update",
+		"agents.read",
+		"agents.manage",
+		"keys.read",
+		"keys.manage",
+		"upstreams.read",
+		"upstreams.manage",
+		"members.read",
+		"members.manage",
+	}
+
+	// Seed Permissions
+	for _, pName := range permissions {
+		var p Permission
+		if err := database.Where("name = ?", pName).FirstOrCreate(&p, Permission{Name: pName}).Error; err != nil {
+			return fmt.Errorf("seed: create permission %s: %w", pName, err)
+		}
+	}
+
+	var allPerms []Permission
+	database.Find(&allPerms)
+
+	var readPerms []Permission
+	database.Where("name LIKE ?", "%.read").Find(&readPerms)
+
+	// Seed Roles
+	var tenantAdmin Role
+	if err := database.Where("name = ?", "tenantAdmin").FirstOrCreate(&tenantAdmin, Role{Name: "tenantAdmin", Description: "Full access to the tenant"}).Error; err != nil {
+		return fmt.Errorf("seed: create role tenantAdmin: %w", err)
+	}
+	// Replace permissions
+	database.Model(&tenantAdmin).Association("Permissions").Replace(allPerms)
+
+	var user Role
+	if err := database.Where("name = ?", "user").FirstOrCreate(&user, Role{Name: "user", Description: "Read-only access to the tenant"}).Error; err != nil {
+		return fmt.Errorf("seed: create role user: %w", err)
+	}
+	database.Model(&user).Association("Permissions").Replace(readPerms)
+
+	slog.Info("seeded RBAC roles and permissions")
 	return nil
 }

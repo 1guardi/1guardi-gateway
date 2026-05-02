@@ -10,13 +10,14 @@ import Guardrails from './pages/Guardrails.tsx'
 import PiiVault from './pages/PiiVault.tsx'
 import Router from './pages/Router.tsx'
 import APIKeys from './pages/APIKeys.tsx'
+import Members from './pages/Members.tsx'
 import Agents from './pages/Agents.tsx'
 import Upstreams from './pages/Upstreams.tsx'
 import Tenants from './pages/Tenants.tsx'
 import { useTenants } from './api/tenants.ts'
 import { useAgents } from './api/agents.ts'
 
-export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams' | 'tenants'
+export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams' | 'tenants' | 'members'
 
 const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
 
@@ -59,6 +60,7 @@ export default function App() {
     router:      <Router selectedAgent={selectedAgent} tenantId={tenantId} />,
     agents:      <Agents tenantId={tenantId} agents={agents} />,
     'api-keys':  <APIKeys selectedAgent={selectedAgent} tenantId={tenantId} agents={agents} />,
+    members:     <Members tenantId={tenantId} />,
     upstreams:   <Upstreams tenantId={tenantId} />,
     tenants:     <Tenants activeTenantId={activeTenantId} onTenantSelect={(id) => { setActiveTenantId(id); setPage('router') }} />,
   }

@@ -67,46 +67,47 @@ func TestSeedDefaultTenant_WithUpstreams(t *testing.T) {
 	require.Len(t, ups, 1, "Should not duplicate upstreams")
 }
 
-func TestSeedAdminUser_Creates(t *testing.T) {
+func TestSeedSuperAdmin_Creates(t *testing.T) {
 	database := setupSeedTestDB(t)
 
-	require.NoError(t, SeedAdminUser(database, "admin", "secret"))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", "secret"))
 
-	var user AdminUser
-	require.NoError(t, database.Where("username = ?", "admin").First(&user).Error)
-	assert.Equal(t, "admin", user.Username)
-	assert.True(t, user.IsActive)
+	var user User
+	require.NoError(t, database.Where("email = ?", "admin@example.com").First(&user).Error)
+	assert.Equal(t, "Super Admin", user.Name)
+	assert.Equal(t, "admin@example.com", user.Email)
+	assert.True(t, user.IsSuperAdmin)
 	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("secret")))
 }
 
-func TestSeedAdminUser_Idempotent(t *testing.T) {
+func TestSeedSuperAdmin_Idempotent(t *testing.T) {
 	database := setupSeedTestDB(t)
 
-	require.NoError(t, SeedAdminUser(database, "admin", "secret"))
-	require.NoError(t, SeedAdminUser(database, "admin", "secret"))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", "secret"))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", "secret"))
 
 	var count int64
-	database.Model(&AdminUser{}).Count(&count)
+	database.Model(&User{}).Count(&count)
 	assert.Equal(t, int64(1), count)
 }
 
-func TestSeedAdminUser_UpdatesPassword(t *testing.T) {
+func TestSeedSuperAdmin_UpdatesPassword(t *testing.T) {
 	database := setupSeedTestDB(t)
 
-	require.NoError(t, SeedAdminUser(database, "admin", "old-pass"))
-	require.NoError(t, SeedAdminUser(database, "admin", "new-pass"))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", "old-pass"))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", "new-pass"))
 
-	var user AdminUser
-	require.NoError(t, database.Where("username = ?", "admin").First(&user).Error)
+	var user User
+	require.NoError(t, database.Where("email = ?", "admin@example.com").First(&user).Error)
 	assert.NoError(t, bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("new-pass")))
 }
 
-func TestSeedAdminUser_EmptyPassword(t *testing.T) {
+func TestSeedSuperAdmin_EmptyPassword(t *testing.T) {
 	database := setupSeedTestDB(t)
 
-	require.NoError(t, SeedAdminUser(database, "admin", ""))
+	require.NoError(t, SeedSuperAdmin(database, "admin@example.com", ""))
 
 	var count int64
-	database.Model(&AdminUser{}).Count(&count)
+	database.Model(&User{}).Count(&count)
 	assert.Equal(t, int64(0), count)
 }

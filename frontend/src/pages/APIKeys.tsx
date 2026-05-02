@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { AgentSummary } from '../api/agents.ts'
 import { useAPIKeys, useCreateAPIKey, useDeleteAPIKey } from '../api/keys.ts'
+import { useMembers } from '../api/members.ts'
 import type { APIKeyResponse } from '../api/keys.ts'
 
 interface APIKeyVM {
@@ -20,6 +21,7 @@ interface APIKeyVM {
   suffix: string
   tenantId: string
   agentId?: string
+  userId?: string
   lastUsed: string
   isActive: boolean
   createdAt: string
@@ -33,6 +35,7 @@ function toVM(k: APIKeyResponse): APIKeyVM {
     suffix: k.Suffix,
     tenantId: String(k.TenantID),
     agentId: k.AgentID != null ? String(k.AgentID) : undefined,
+    userId: k.UserID != null ? String(k.UserID) : undefined,
     lastUsed: k.LastUsedAt ? new Date(k.LastUsedAt).toLocaleDateString() : 'Never',
     isActive: k.IsActive,
     createdAt: new Date(k.CreatedAt).toLocaleDateString(),
@@ -47,13 +50,15 @@ interface APIKeysProps {
 
 export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProps) {
   const [newKeyName, setNewKeyName] = useState('')
-  const [newKeyScope, setNewKeyScope] = useState<'project' | 'agent'>('project')
+  const [newKeyScope, setNewKeyScope] = useState<'project' | 'agent' | 'user'>('project')
   const [newKeyAgentId, setNewKeyAgentId] = useState<string>('')
+  const [newKeyUserId, setNewKeyUserId] = useState<string>('')
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const { data: keysData = [] } = useAPIKeys(tenantId)
   const keys = keysData.map(toVM)
+  const { data: membersData = [] } = useMembers(tenantId)
 
   const { mutate: createAPIKey } = useCreateAPIKey(tenantId)
   const { mutate: deleteAPIKey } = useDeleteAPIKey(tenantId)
@@ -66,8 +71,9 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
 
   const handleCreateKey = () => {
     if (!tenantId) return
-    const body: { name: string; agent_id?: number } = { name: newKeyName || 'Untitled Key' }
+    const body: { name: string; agent_id?: number; user_id?: number } = { name: newKeyName || 'Untitled Key' }
     if (newKeyScope === 'agent' && newKeyAgentId) body.agent_id = Number(newKeyAgentId)
+    if (newKeyScope === 'user' && newKeyUserId) body.user_id = Number(newKeyUserId)
     
     createAPIKey(body, {
       onSuccess: (data) => {
@@ -75,6 +81,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
         setNewKeyName('')
         setNewKeyScope('project')
         setNewKeyAgentId('')
+        setNewKeyUserId('')
       }
     })
   }
@@ -123,14 +130,17 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                   </div>
                   <div className="grid gap-2">
                     <Label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">Scope</Label>
-                    <Select value={newKeyScope} onValueChange={(v) => { setNewKeyScope(v as 'project' | 'agent'); setNewKeyAgentId('') }}>
+                    <Select value={newKeyScope} onValueChange={(v) => { setNewKeyScope(v as 'project' | 'agent' | 'user'); setNewKeyAgentId(''); setNewKeyUserId('') }}>
                       <SelectTrigger className="font-mono text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="project" className="font-mono text-xs">Project Level (All Agents)</SelectItem>
+                        <SelectItem value="project" className="font-mono text-xs">Project Level (All Agents & Users)</SelectItem>
                         <SelectItem value="agent" className="font-mono text-xs" disabled={agents.length === 0}>
                           Agent Specific{agents.length === 0 ? ' (no agents)' : ''}
+                        </SelectItem>
+                        <SelectItem value="user" className="font-mono text-xs" disabled={membersData.length === 0}>
+                          User Specific{membersData.length === 0 ? ' (no users)' : ''}
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -152,13 +162,30 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                       </Select>
                     </div>
                   )}
+                  {newKeyScope === 'user' && membersData.length > 0 && (
+                    <div className="grid gap-2">
+                      <Label className="font-mono text-[10px] tracking-widest uppercase text-muted-foreground">User</Label>
+                      <Select value={newKeyUserId} onValueChange={setNewKeyUserId}>
+                        <SelectTrigger className="font-mono text-xs">
+                          <SelectValue placeholder="Select user" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {membersData.map((m) => (
+                            <SelectItem key={m.UserID} value={String(m.UserID)} className="font-mono text-xs">
+                              {m.User?.Name} ({m.User?.Email})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsCreateOpen(false)} className="font-mono text-xs">Cancel</Button>
                   <Button
                     onClick={handleCreateKey}
                     className="font-mono text-xs"
-                    disabled={!tenantId || (newKeyScope === 'agent' && !newKeyAgentId)}
+                    disabled={!tenantId || (newKeyScope === 'agent' && !newKeyAgentId) || (newKeyScope === 'user' && !newKeyUserId)}
                   >
                     Generate Key
                   </Button>
@@ -261,7 +288,14 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
                     <TableCell>
                       {key.agentId ? (
                         <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-primary border-primary/20 bg-primary/5 uppercase">
-                          {agentMap[key.agentId] ?? `AGENT ${key.agentId}`}
+                          AGENT: {agentMap[key.agentId] ?? key.agentId}
+                        </Badge>
+                      ) : key.userId ? (
+                        <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-primary border-primary/20 bg-primary/5 uppercase">
+                          USER: {(() => {
+                            const user = membersData.find(m => String(m.UserID) === key.userId)?.User
+                            return user ? `${user.Name} (${user.Email})` : key.userId
+                          })()}
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="font-mono text-[9px] h-3.5 px-1 text-muted-foreground border-muted-foreground/20 uppercase">

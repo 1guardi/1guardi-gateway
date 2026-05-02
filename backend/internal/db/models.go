@@ -38,6 +38,8 @@ type APIKey struct {
 	Tenant     Tenant
 	AgentID    *uint `gorm:"index"` // Optional: if set, key is scoped to this agent
 	Agent      Agent `gorm:"foreignKey:AgentID"`
+	UserID     *uint `gorm:"index"` // Optional: if set, key is scoped to this user
+	User       User  `gorm:"foreignKey:UserID"`
 	LastUsedAt *time.Time
 	IsActive   bool `gorm:"default:true"`
 }
@@ -54,12 +56,38 @@ type Upstream struct {
 	Tenant   Tenant `gorm:"-" json:"-"`
 }
 
-// AdminUser represents an admin who can manage the gateway via the admin UI.
-type AdminUser struct {
+// User represents a user who can log in to the gateway.
+type User struct {
 	gorm.Model
-	Username     string `gorm:"uniqueIndex;not null"`
+	Name         string `gorm:"not null;default:''"`
+	Email        string `gorm:"uniqueIndex;not null"`
 	PasswordHash string `gorm:"not null"`
-	IsActive     bool   `gorm:"default:true"`
+	IsSuperAdmin bool   `gorm:"default:false"`
+}
+
+// Role represents a collection of permissions.
+type Role struct {
+	gorm.Model
+	Name        string `gorm:"uniqueIndex;not null"`
+	Description string
+	Permissions []Permission `gorm:"many2many:role_permissions;"`
+}
+
+// Permission represents an atomic action that can be performed.
+type Permission struct {
+	gorm.Model
+	Name string `gorm:"uniqueIndex;not null"` // e.g., "tenant.read"
+}
+
+// TenantMember maps a user to a tenant with a specific role.
+type TenantMember struct {
+	gorm.Model
+	UserID   uint `gorm:"uniqueIndex:idx_user_tenant;not null"`
+	User     User
+	TenantID uint `gorm:"uniqueIndex:idx_user_tenant;not null"`
+	Tenant   Tenant
+	RoleID   uint `gorm:"not null"`
+	Role     Role
 }
 
 // AutoMigrate runs schema migrations for all models.
@@ -69,6 +97,9 @@ func AutoMigrate(db *gorm.DB) error {
 		&Agent{},
 		&APIKey{},
 		&Upstream{},
-		&AdminUser{},
+		&User{},
+		&Role{},
+		&Permission{},
+		&TenantMember{},
 	)
 }

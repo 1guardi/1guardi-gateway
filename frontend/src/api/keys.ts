@@ -9,6 +9,7 @@ export interface APIKeyResponse {
   Suffix: string
   TenantID: number
   AgentID: number | null
+  UserID: number | null
   LastUsedAt: string | null
   IsActive: boolean
 }
@@ -32,7 +33,7 @@ export function useCreateAPIKey(tenantId: string | null) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (body: { name: string; agent_id?: number }) => {
+    mutationFn: async (body: { name: string; agent_id?: number; user_id?: number }) => {
       if (!tenantId) throw new Error('Tenant ID is required')
       const { data } = await apiClient.post<CreateKeyResponse>(`/tenants/${tenantId}/keys`, body)
       return data

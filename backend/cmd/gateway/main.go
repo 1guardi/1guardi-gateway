@@ -64,8 +64,12 @@ func main() {
 		slog.Warn("failed to seed default tenant", "err", err)
 	}
 
-	if err := db.SeedAdminUser(database, cfg.Admin.Username, cfg.Admin.Password); err != nil {
-		slog.Warn("failed to seed admin user", "err", err)
+	if err := db.SeedSuperAdmin(database, cfg.Admin.Email, cfg.Admin.Password); err != nil {
+		slog.Error("failed to seed super admin", "err", err)
+	}
+
+	if err := db.SeedRBAC(database); err != nil {
+		slog.Error("failed to seed RBAC roles", "err", err)
 	}
 
 	// Redis initialization

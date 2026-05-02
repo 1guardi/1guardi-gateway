@@ -7,14 +7,14 @@ interface LoginProps {
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
   const login = useLogin(onLogin)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    login.mutate({ username, password })
+    login.mutate({ email, password })
   }
 
   return (
@@ -54,14 +54,14 @@ export default function Login({ onLogin }: LoginProps) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="font-mono text-[9px] tracking-widest text-muted-foreground">USERNAME</label>
+              <label className="font-mono text-[9px] tracking-widest text-muted-foreground">EMAIL</label>
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full h-9 rounded-md border border-input bg-background px-3 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="admin"
-                autoComplete="username"
+                placeholder="admin@example.com"
+                autoComplete="email"
                 required
               />
             </div>

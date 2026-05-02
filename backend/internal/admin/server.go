@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -61,29 +62,35 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 
 			r.Get("/router/endpoints", srv.handleListEndpoints)
 			r.Get("/providers/{provider}/models", srv.handleListProviderModels)
+			r.Get("/roles", srv.handleListRoles)
+			r.Get("/users", srv.handleListUsers)
 
-			r.Get("/tenants", srv.handleListTenants)
-			r.Post("/tenants", srv.handleCreateTenant)
+			r.Get("/tenants", srv.handleListTenants)   // Superadmin only? For now let's leave it open but it should probably filter by user if not superadmin.
+			r.Post("/tenants", srv.handleCreateTenant) // Superadmin only ideally.
 
 			r.Route("/tenants/{tenantID}", func(r chi.Router) {
-				r.Get("/", srv.handleGetTenant)
-				r.Patch("/", srv.handleUpdateTenant)
-				r.Delete("/", srv.handleDeleteTenant)
+				r.With(srv.RequirePermission("tenant.read")).Get("/", srv.handleGetTenant)
+				r.With(srv.RequirePermission("tenant.update")).Patch("/", srv.handleUpdateTenant)
+				r.With(srv.RequirePermission("tenant.update")).Delete("/", srv.handleDeleteTenant)
 
-				r.Get("/rules", srv.handleListRules)
-				r.Post("/rules", srv.handleCreateRule)
+				r.With(srv.RequirePermission("tenant.read")).Get("/rules", srv.handleListRules)
+				r.With(srv.RequirePermission("tenant.update")).Post("/rules", srv.handleCreateRule)
 
-				r.Get("/agents", srv.handleListAgents)
-				r.Post("/agents", srv.handleCreateAgent)
+				r.With(srv.RequirePermission("agents.read")).Get("/agents", srv.handleListAgents)
+				r.With(srv.RequirePermission("agents.manage")).Post("/agents", srv.handleCreateAgent)
 
-				r.Get("/keys", srv.handleListKeys)
-				r.Post("/keys", srv.handleCreateKey)
-				r.Delete("/keys/{keyID}", srv.handleRevokeKey)
+				r.With(srv.RequirePermission("keys.read")).Get("/keys", srv.handleListKeys)
+				r.With(srv.RequirePermission("keys.manage")).Post("/keys", srv.handleCreateKey)
+				r.With(srv.RequirePermission("keys.manage")).Delete("/keys/{keyID}", srv.handleRevokeKey)
 
-				r.Get("/upstreams", srv.handleListUpstreams)
-				r.Post("/upstreams", srv.handleCreateUpstream)
-				r.Put("/upstreams/{keyID}", srv.handleUpdateUpstream)
-				r.Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
+				r.With(srv.RequirePermission("upstreams.read")).Get("/upstreams", srv.handleListUpstreams)
+				r.With(srv.RequirePermission("upstreams.manage")).Post("/upstreams", srv.handleCreateUpstream)
+				r.With(srv.RequirePermission("upstreams.manage")).Put("/upstreams/{keyID}", srv.handleUpdateUpstream)
+				r.With(srv.RequirePermission("upstreams.manage")).Delete("/upstreams/{keyID}", srv.handleDeleteUpstream)
+
+				r.With(srv.RequirePermission("members.read")).Get("/members", srv.handleListMembers)
+				r.With(srv.RequirePermission("members.manage")).Post("/members", srv.handleAddMember)
+				r.With(srv.RequirePermission("members.manage")).Delete("/members/{userID}", srv.handleRemoveMember)
 			})
 		})
 	})
@@ -100,18 +107,69 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 		token := strings.TrimPrefix(header, "Bearer ")
-		if _, err := auth.ValidateToken(token, s.cfg.Admin.JWTSecret); err != nil {
+		claims, err := auth.ValidateToken(token, s.cfg.Admin.JWTSecret)
+		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+
+		ctx := context.WithValue(r.Context(), "claims", claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// handleLogin authenticates an admin user and returns a JWT.
+// RequirePermission enforces that the user has a specific permission for the tenant in the URL.
+func (s *Server) RequirePermission(permission string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := r.Context().Value("claims").(*auth.Claims)
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			// SuperAdmins bypass all permission checks
+			if claims.IsSuperAdmin {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			tenantIDStr := chi.URLParam(r, "tenantID")
+			tenantID, err := strconv.Atoi(tenantIDStr)
+			if err != nil {
+				http.Error(w, "invalid tenant id", http.StatusBadRequest)
+				return
+			}
+
+			// Query TenantMember to get role and verify permission
+			var tm db.TenantMember
+			if err := s.db.Preload("Role.Permissions").Where("user_id = ? AND tenant_id = ?", claims.UserID, tenantID).First(&tm).Error; err != nil {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+
+			hasPermission := false
+			for _, p := range tm.Role.Permissions {
+				if p.Name == permission {
+					hasPermission = true
+					break
+				}
+			}
+
+			if !hasPermission {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// handleLogin authenticates a user and returns a JWT.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -119,8 +177,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user db.AdminUser
-	if err := s.db.Where("username = ? AND is_active = ?", req.Username, true).First(&user).Error; err != nil {
+	var user db.User
+	if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
@@ -131,7 +189,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ttl := time.Duration(s.cfg.Admin.JWTTTLHours) * time.Hour
-	token, err := auth.GenerateToken(user.ID, user.Username, s.cfg.Admin.JWTSecret, ttl)
+	token, err := auth.GenerateToken(user.ID, user.Name, user.Email, user.IsSuperAdmin, s.cfg.Admin.JWTSecret, ttl)
 	if err != nil {
 		http.Error(w, "failed to generate token", http.StatusInternalServerError)
 		return
@@ -433,6 +491,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name    string `json:"name"`
 		AgentID *uint  `json:"agent_id"`
+		UserID  *uint  `json:"user_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -452,6 +511,7 @@ func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 		Suffix:   suffix,
 		TenantID: uint(tenantID),
 		AgentID:  req.AgentID,
+		UserID:   req.UserID,
 		IsActive: true,
 	}
 
@@ -640,4 +700,110 @@ func (s *Server) handleDeleteUpstream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+
+	var members []db.TenantMember
+	if err := s.db.Preload("User").Preload("Role").Where("tenant_id = ?", tenantID).Find(&members).Error; err != nil {
+		http.Error(w, "failed to list members", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(members)
+}
+
+func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+
+	var req struct {
+		UserID *uint  `json:"user_id"`
+		Email  string `json:"email"`
+		Name   string `json:"name"`
+		RoleID uint   `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var user db.User
+	if req.UserID != nil {
+		if err := s.db.First(&user, *req.UserID).Error; err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+	} else if req.Email != "" && req.Name != "" {
+		if err := s.db.Where("email = ?", req.Email).First(&user).Error; err != nil {
+			// Auto-create user
+			user = db.User{
+				Email:        req.Email,
+				Name:         req.Name,
+				PasswordHash: "", // Needs proper generation or invite flow
+			}
+			if err := s.db.Create(&user).Error; err != nil {
+				http.Error(w, "failed to create user", http.StatusInternalServerError)
+				return
+			}
+		}
+	} else {
+		http.Error(w, "user_id or email and name required", http.StatusBadRequest)
+		return
+	}
+
+	member := db.TenantMember{
+		UserID:   user.ID,
+		TenantID: uint(tenantID),
+		RoleID:   req.RoleID,
+	}
+
+	if err := s.db.Create(&member).Error; err != nil {
+		http.Error(w, "failed to add member", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(member)
+}
+
+func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := chi.URLParam(r, "tenantID")
+	tenantID, _ := strconv.Atoi(tenantIDStr)
+	userIDStr := chi.URLParam(r, "userID")
+	userID, _ := strconv.Atoi(userIDStr)
+
+	if err := s.db.Where("tenant_id = ? AND user_id = ?", tenantID, userID).Delete(&db.TenantMember{}).Error; err != nil {
+		http.Error(w, "failed to remove member", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListRoles(w http.ResponseWriter, r *http.Request) {
+	var roles []db.Role
+	if err := s.db.Find(&roles).Error; err != nil {
+		http.Error(w, "failed to list roles", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(roles)
+}
+
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	var users []db.User
+	if err := s.db.Find(&users).Error; err != nil {
+		http.Error(w, "failed to list users", http.StatusInternalServerError)
+		return
+	}
+	// Hide password hashes
+	for i := range users {
+		users[i].PasswordHash = ""
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
 }

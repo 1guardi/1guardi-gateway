@@ -98,6 +98,26 @@ func TestCircuitBreaker_SuccessResetsFailureCount(t *testing.T) {
 	assert.True(t, cb.available())
 }
 
+func TestCircuitBreaker_StateNames(t *testing.T) {
+	cb := &circuitBreaker{}
+	assert.Equal(t, "CLOSED", cb.stateName())
+
+	cb.mu.Lock()
+	cb.state = stateOpen
+	cb.mu.Unlock()
+	assert.Equal(t, "OPEN", cb.stateName())
+
+	cb.mu.Lock()
+	cb.state = stateHalfOpen
+	cb.mu.Unlock()
+	assert.Equal(t, "HALF-OPEN", cb.stateName())
+
+	cb.mu.Lock()
+	cb.state = 99 // unknown
+	cb.mu.Unlock()
+	assert.Equal(t, "UNKNOWN", cb.stateName())
+}
+
 // ---- rolling window ----
 
 func TestRollingWindow_EmptyP99(t *testing.T) {

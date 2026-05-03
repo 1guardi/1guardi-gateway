@@ -521,6 +521,12 @@ func (s *Server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	if agent.Name == "" {
+		http.Error(w, "agent name is required", http.StatusBadRequest)
+		return
+	}
+
 	agent.TenantID = uint(tenantID)
 	if err := s.db.Create(&agent).Error; err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -620,10 +626,10 @@ var defaultManagedRules = []struct {
 	managedID string
 	enabled   bool
 }{
-	{"Prompt Injection Detection", 1, "input",        "block", "prompt-injection",   true},
-	{"Secret Detection",           2, "input,output", "block", "secret-detection",   true},
-	{"PII Leakage — Output",       3, "output",       "log",   "pii-leakage-output", true},
-	{"Toxicity / Hate Speech",     4, "input,output", "block", "toxicity-basic",     true},
+	{"Prompt Injection Detection", 1, "input", "block", "prompt-injection", true},
+	{"Secret Detection", 2, "input,output", "block", "secret-detection", true},
+	{"PII Leakage — Output", 3, "output", "log", "pii-leakage-output", true},
+	{"Toxicity / Hate Speech", 4, "input,output", "block", "toxicity-basic", true},
 }
 
 // seedManagedRules inserts the default managed guardrail rules for a tenant if

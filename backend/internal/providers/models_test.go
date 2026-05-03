@@ -109,25 +109,49 @@ func TestModelProviderService_UnsupportedProvider(t *testing.T) {
 
 func TestModelProviderService_FetchOpenAIModels_Error(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal error"))
+	}))
+	defer ts.Close()
+
+	svc := NewModelProviderService(nil)
+	_, err := svc.GetModels(context.Background(), "openai", "key", ts.URL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "500")
+}
+
+func TestModelProviderService_FetchOpenAIModels_NonJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("not json"))
+	}))
+	defer ts.Close()
+
+	svc := NewModelProviderService(nil)
+	_, err := svc.GetModels(context.Background(), "openai", "key", ts.URL)
+	assert.Error(t, err)
+}
+
+func TestModelProviderService_FetchGeminiModels_Error(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	svc := NewModelProviderService(nil)
+	svc.geminiBaseURL = ts.URL
+	_, err := svc.GetModels(context.Background(), "gemini", "key", "")
+	assert.Error(t, err)
+}
+
+func TestModelProviderService_FetchAnthropicModels_Error(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer ts.Close()
 
 	svc := NewModelProviderService(nil)
-	_, err := svc.fetchOpenAIModels(context.Background(), "bad-key", ts.URL)
+	svc.anthropicBaseURL = ts.URL
+	_, err := svc.GetModels(context.Background(), "anthropic", "key", "")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "openai api error")
-}
-
-func TestModelProviderService_FetchOpenAIModels_NonJSON(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("not found"))
-	}))
-	defer ts.Close()
-
-	svc := NewModelProviderService(nil)
-	_, err := svc.fetchOpenAIModels(context.Background(), "key", ts.URL)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "non-json response")
 }

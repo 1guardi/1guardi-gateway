@@ -155,6 +155,26 @@ func extractTextFromResponse(provider string, body []byte) string {
 			}
 			return sb.String()
 		}
+	case "gemini":
+		var resp struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(body, &resp); err == nil {
+			var sb strings.Builder
+			for _, cand := range resp.Candidates {
+				for _, part := range cand.Content.Parts {
+					sb.WriteString(part.Text)
+					sb.WriteByte('\n')
+				}
+			}
+			return sb.String()
+		}
 	default: // openai-compatible
 		var resp struct {
 			Choices []struct {
@@ -339,11 +359,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	upSpan.End()
 	defer resp.Body.Close()
 
-	for k, v := range resp.Header {
-		w.Header()[k] = v
-	}
-	w.WriteHeader(resp.StatusCode)
-
 	var (
 		ttftMS       float64
 		inputTokens  int
@@ -351,6 +366,10 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if streaming {
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
 		ttftMS, inputTokens, outputTokens = s.proxySSE(w, endpoint.Provider(), resp.Body, start)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
@@ -359,7 +378,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		outputContent := extractTextFromResponse(endpoint.Provider(), body)
 
 		// 6. Output guardrail span — blocks before writing to client.
-		if s.guardrails != nil {
+		if s.guardrails != nil && resp.StatusCode < 400 {
 			grCtx, grSpan := tracer.Start(baseCtx, "guardrail.execution",
 				trace.WithAttributes(attribute.String("guardrail.scope", guardrails.ScopeOutput)))
 			decision, evalErr := s.guardrails.Evaluate(grCtx, guardrails.EvalContext{
@@ -381,6 +400,12 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		llmSpan.SetAttributes(attribute.String("gen_ai.completion", truncate(outputContent)))
+
+		// No guardrail fire or 4xx/5xx upstream — pass through
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
 		w.Write(body) //nolint:errcheck — client disconnect is non-fatal
 	}
 

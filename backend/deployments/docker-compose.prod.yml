@@ -48,7 +48,7 @@ services:
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://${POSTGRES_USER:-gateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gateway}?sslmode=disable
       CLICKHOUSE_ADDR: clickhouse:9000
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-otel}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-otel}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-otel}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
@@ -140,7 +140,7 @@ services:
     image: clickhouse/clickhouse-server:25.12
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-otel}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-otel}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-otel}
     expose:
       - "8123"
@@ -158,7 +158,7 @@ services:
     restart: always
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user ${CLICKHOUSE_USER:-otel} --password ${CLICKHOUSE_PASSWORD:-otel} --query 'SELECT 1'"]
+      test: ["CMD-SHELL", "clickhouse-client --user ${CLICKHOUSE_USER:-default} --password ${CLICKHOUSE_PASSWORD:-otel} --query 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -198,7 +198,7 @@ services:
           clickhouse:
             endpoint: tcp://clickhouse:9000?dial_timeout=10s&compress=lz4
             database: ${CLICKHOUSE_DB:-otel}
-            username: ${CLICKHOUSE_USER:-otel}
+            username: ${CLICKHOUSE_USER:-default}
             password: ${CLICKHOUSE_PASSWORD:-otel}
             ttl: 720h
             logs_table_name: otel_logs
@@ -235,8 +235,10 @@ services:
     restart: always
     logging: *json-logging
     depends_on:
-      - jaeger
-      - clickhouse
+      jaeger:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
 
   # ── Jaeger (trace UI — bind to localhost or add nginx auth to expose) ─────
   jaeger:

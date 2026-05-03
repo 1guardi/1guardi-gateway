@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -183,4 +184,34 @@ func TestNewRouter(t *testing.T) {
 			assert.Equal(t, http.StatusUnauthorized, rr.Code)
 		})
 	}
+}
+func TestAgentTraceMiddleware(t *testing.T) {
+	handler := agentTraceMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx := withTenantContext(context.Background(), TenantContext{
+		TenantID: "1",
+		AgentID:  "agent-1",
+		ThreadID: "thread-1",
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestTruncate(t *testing.T) {
+	s := "short"
+	assert.Equal(t, s, truncate(s))
+
+	long := ""
+	for i := 0; i < maxAttrLen+10; i++ {
+		long += "a"
+	}
+	truncated := truncate(long)
+	assert.Equal(t, maxAttrLen, len(truncated))
 }

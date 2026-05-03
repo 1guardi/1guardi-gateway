@@ -30,18 +30,18 @@ type Agent struct {
 // APIKey represents a key used to authenticate requests to the gateway.
 type APIKey struct {
 	gorm.Model
-	KeyHash    string `gorm:"uniqueIndex;not null"`
-	Prefix     string `gorm:"not null"` // e.g. "sk_"
-	Suffix     string `gorm:"not null"` // Last 4 characters of the key
-	Name       string `gorm:"not null"`
-	TenantID   uint   `gorm:"not null;index"`
-	Tenant     Tenant
-	AgentID    *uint `gorm:"index"` // Optional: if set, key is scoped to this agent
-	Agent      Agent `gorm:"foreignKey:AgentID"`
-	UserID     *uint `gorm:"index"` // Optional: if set, key is scoped to this user
-	User       User  `gorm:"foreignKey:UserID"`
-	LastUsedAt *time.Time
-	IsActive   bool `gorm:"default:true"`
+	KeyHash    string     `gorm:"uniqueIndex;not null" json:"-"`
+	Prefix     string     `gorm:"not null" json:"prefix"` // e.g. "sk_"
+	Suffix     string     `gorm:"not null" json:"suffix"` // Last 4 characters of the key
+	Name       string     `gorm:"not null" json:"name"`
+	TenantID   uint       `gorm:"not null;index" json:"tenant_id"`
+	Tenant     Tenant     `gorm:"-" json:"-"`
+	AgentID    *uint      `gorm:"index" json:"agent_id"` // Optional: if set, key is scoped to this agent
+	Agent      Agent      `gorm:"foreignKey:AgentID" json:"-"`
+	UserID     *uint      `gorm:"index" json:"user_id"` // Optional: if set, key is scoped to this user
+	User       User       `gorm:"foreignKey:UserID" json:"-"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	IsActive   bool       `gorm:"default:true" json:"is_active"`
 }
 
 // Upstream represents an LLM provider endpoint.
@@ -94,16 +94,16 @@ type TenantMember struct {
 type GuardrailRule struct {
 	gorm.Model
 	TenantID  uint   `gorm:"not null;index" json:"tenant_id"`
-	AgentID   *uint  `gorm:"index" json:"agent_id"`                          // nil = applies to all agents
+	AgentID   *uint  `gorm:"index" json:"agent_id"` // nil = applies to all agents
 	Name      string `gorm:"not null" json:"name"`
 	Priority  int    `gorm:"not null;default:100" json:"priority"`
-	Scope     string `gorm:"not null" json:"scope"`                          // CSV: "input", "output", "tool_call"
-	Direction string `gorm:"not null;default:'both'" json:"direction"`       // "inbound"|"outbound"|"both"
-	Condition string `gorm:"type:text" json:"condition"`                     // JSON-encoded Condition struct
-	Action    string `gorm:"not null" json:"action"`                         // "block"|"log"|"tag"|"rewrite"|"shadow"|"substitute"
+	Scope     string `gorm:"not null" json:"scope"`                    // CSV: "input", "output", "tool_call"
+	Direction string `gorm:"not null;default:'both'" json:"direction"` // "inbound"|"outbound"|"both"
+	Condition string `gorm:"type:text" json:"condition"`               // JSON-encoded Condition struct
+	Action    string `gorm:"not null" json:"action"`                   // "block"|"log"|"tag"|"rewrite"|"shadow"|"substitute"
 	Mode      string `gorm:"not null;default:'parallel'" json:"mode"`
 	Managed   bool   `gorm:"default:false" json:"managed"`
-	ManagedID string `json:"managed_id"`                                     // e.g., "prompt-injection"
+	ManagedID string `json:"managed_id"` // e.g., "prompt-injection"
 	Version   string `json:"version"`
 	Enabled   bool   `gorm:"default:true" json:"enabled"`
 }

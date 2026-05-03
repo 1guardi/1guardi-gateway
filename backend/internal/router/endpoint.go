@@ -75,12 +75,14 @@ func (cb *circuitBreaker) stateName() string {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 	switch cb.state {
+	case stateClosed:
+		return "CLOSED"
 	case stateOpen:
 		return "OPEN"
 	case stateHalfOpen:
 		return "HALF-OPEN"
 	default:
-		return "CLOSED"
+		return "UNKNOWN"
 	}
 }
 

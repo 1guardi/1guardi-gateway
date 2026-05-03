@@ -11,8 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
@@ -94,6 +98,162 @@ func TestHandleChatCompletions_Validation(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, rr.Code)
 		assert.Contains(t, rr.Body.String(), "messages is required")
+	})
+}
+
+func TestFlattenMessages(t *testing.T) {
+	t.Run("simple", func(t *testing.T) {
+		msgs := []map[string]interface{}{
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi"},
+		}
+		b, _ := json.Marshal(msgs)
+		flat := flattenMessages(json.RawMessage(b))
+		assert.Contains(t, flat, "hello")
+		assert.Contains(t, flat, "hi")
+	})
+
+	t.Run("complex content", func(t *testing.T) {
+		msgs := []map[string]interface{}{
+			{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "look at this"},
+				},
+			},
+		}
+		b, _ := json.Marshal(msgs)
+		flat := flattenMessages(json.RawMessage(b))
+		assert.Contains(t, flat, "look at this")
+	})
+}
+
+func TestExtractTextFromResponse(t *testing.T) {
+	t.Run("openai", func(t *testing.T) {
+		resp := map[string]interface{}{
+			"choices": []interface{}{
+				map[string]interface{}{
+					"message": map[string]interface{}{"content": "hello world"},
+				},
+			},
+		}
+		jsonResp, _ := json.Marshal(resp)
+		text := extractTextFromResponse("openai", jsonResp)
+		assert.Equal(t, "hello world\n", text)
+	})
+
+	t.Run("anthropic", func(t *testing.T) {
+		resp := map[string]interface{}{
+			"content": []interface{}{
+				map[string]interface{}{"type": "text", "text": "claude says hi"},
+			},
+		}
+		jsonResp, _ := json.Marshal(resp)
+		text := extractTextFromResponse("anthropic", jsonResp)
+		assert.Equal(t, "claude says hi\n", text)
+	})
+
+	t.Run("gemini", func(t *testing.T) {
+		resp := map[string]interface{}{
+			"candidates": []interface{}{
+				map[string]interface{}{
+					"content": map[string]interface{}{
+						"parts": []interface{}{
+							map[string]interface{}{"text": "gemini text"},
+						},
+					},
+				},
+			},
+		}
+		jsonResp, _ := json.Marshal(resp)
+		text := extractTextFromResponse("gemini", jsonResp)
+		assert.Equal(t, "gemini text\n", text)
+	})
+}
+
+func TestHandleChatCompletions_Guardrails(t *testing.T) {
+	database, _ := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	database.AutoMigrate(&db.GuardrailRule{}, &db.Tenant{})
+
+	tenantID := uint(1)
+	database.Create(&db.Tenant{gorm.Model{ID: tenantID}, "t1", "", "k1", nil, nil, nil})
+
+	// Rule to block "badword"
+	database.Create(&db.GuardrailRule{
+		TenantID:  tenantID,
+		Name:      "block-bad",
+		Action:    "block",
+		Scope:     "input",
+		Enabled:   true,
+		Condition: `{"type":"keyword","patterns":["badword"]}`,
+	})
+
+	eng := guardrails.NewEngine(database, nil)
+	srv := &Server{
+		guardrails: eng,
+		router:     llmrouter.New([]config.UpstreamConfig{}), // No upstreams needed for block
+	}
+
+	t.Run("input block", func(t *testing.T) {
+		body := map[string]interface{}{
+			"model":    "gpt-4o",
+			"messages": []map[string]string{{"role": "user", "content": "this is a badword message"}},
+		}
+		jsonBody, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBuffer(jsonBody))
+		ctx := withTenantContext(context.Background(), TenantContext{TenantID: "1"})
+		req = req.WithContext(ctx)
+		rr := httptest.NewRecorder()
+
+		srv.handleChatCompletions(rr, req)
+
+		assert.Equal(t, http.StatusForbidden, rr.Code)
+		assert.Contains(t, rr.Body.String(), "blocked by guardrail")
+	})
+
+	t.Run("output block", func(t *testing.T) {
+		// Rule to block "output-bad"
+		database.Create(&db.GuardrailRule{
+			TenantID:  tenantID,
+			Name:      "block-output",
+			Action:    "block",
+			Scope:     "output",
+			Enabled:   true,
+			Condition: `{"type":"keyword","patterns":["output-bad"]}`,
+		})
+
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := map[string]interface{}{
+				"choices": []interface{}{
+					map[string]interface{}{
+						"message": map[string]interface{}{"content": "this response contains output-bad text"},
+					},
+				},
+			}
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer ts.Close()
+
+		srv.router = llmrouter.New([]config.UpstreamConfig{{
+			KeyID:    "test",
+			Provider: "openai",
+			Model:    "gpt-4o",
+			BaseURL:  ts.URL,
+			APIKey:   "k1",
+			TenantID: tenantID,
+		}})
+		srv.httpClient = &http.Client{}
+
+		body := chatBody(t, nil)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", body)
+		ctx := withTenantContext(context.Background(), TenantContext{TenantID: "1"})
+		req = req.WithContext(ctx)
+		rr := httptest.NewRecorder()
+
+		srv.handleChatCompletions(rr, req)
+
+		assert.Equal(t, http.StatusInternalServerError, rr.Code)
+		assert.Contains(t, rr.Body.String(), "response blocked by guardrail")
 	})
 }
 
@@ -490,6 +650,25 @@ func TestHandleListModels(t *testing.T) {
 
 		assert.Len(t, resp.Data, 1)
 		assert.Equal(t, "gpt-3.5-turbo", resp.Data[0].ID)
+	})
+
+	t.Run("anthropic format", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		req.Header.Set("anthropic-version", "2023-06-01")
+		tc := TenantContext{TenantID: "1"}
+		ctx := context.WithValue(req.Context(), tenantContextKey, tc)
+		req = req.WithContext(ctx)
+
+		rr := httptest.NewRecorder()
+		srv.handleListModels(rr, req)
+
+		assert.Equal(t, http.StatusOK, rr.Code)
+		var resp anthropicListModelsResponse
+		err := json.Unmarshal(rr.Body.Bytes(), &resp)
+		require.NoError(t, err)
+		assert.Len(t, resp.Data, 2)
+		assert.Equal(t, "claude-3-opus", resp.Data[0].ID)
+		assert.Equal(t, "gpt-4o", resp.Data[1].ID)
 	})
 
 	t.Run("list models for tenant with no endpoints", func(t *testing.T) {

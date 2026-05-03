@@ -18,7 +18,7 @@ services:
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://gateway:gateway@postgres:5432/gateway?sslmode=disable
       CLICKHOUSE_ADDR: clickhouse:9000
-      CLICKHOUSE_USER: otel
+      CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: otel
       CLICKHOUSE_DB: otel
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
@@ -101,7 +101,7 @@ services:
     image: clickhouse/clickhouse-server:25.12
     environment:
       CLICKHOUSE_DB: otel
-      CLICKHOUSE_USER: otel
+      CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: otel
     ports:
       - "8123:8123"   # HTTP interface — admin API queries here
@@ -117,7 +117,7 @@ services:
           cpus: '0.25'
           memory: 512M
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user otel --password otel --query 'SELECT 1'"]
+      test: ["CMD-SHELL", "clickhouse-client --user default --password otel --query 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -139,8 +139,10 @@ services:
           cpus: '0.25'
           memory: 256M
     depends_on:
-      - jaeger
-      - clickhouse
+      jaeger:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────

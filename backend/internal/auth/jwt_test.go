@@ -36,4 +36,15 @@ func TestJWT(t *testing.T) {
 		_, err := ValidateToken(token, secret)
 		assert.Error(t, err)
 	})
+
+	t.Run("MalformedToken", func(t *testing.T) {
+		_, err := ValidateToken("not.a.token", secret)
+		assert.Error(t, err)
+	})
+
+	t.Run("EmptySecret", func(t *testing.T) {
+		token, _ := GenerateToken(1, "User", "u@e.com", false, secret, ttl)
+		_, err := ValidateToken(token, "")
+		assert.Error(t, err)
+	})
 }

@@ -34,3 +34,10 @@ func TestSetup_Error(t *testing.T) {
 	_, err := Setup(cfg)
 	assert.Error(t, err)
 }
+
+func TestRedisSetup_Error(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Redis.Addr = "localhost:1" // Likely closed port
+	_, err := RedisSetup(cfg)
+	assert.Error(t, err)
+}

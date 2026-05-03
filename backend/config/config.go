@@ -91,7 +91,7 @@ func Load() (*Config, error) {
 		},
 		ClickHouse: ClickHouseConfig{
 			Addr:     env("CLICKHOUSE_ADDR", "localhost:9001"),
-			User:     env("CLICKHOUSE_USER", "otel"),
+			User:     env("CLICKHOUSE_USER", "default"),
 			Password: env("CLICKHOUSE_PASSWORD", "otel"),
 			Database: env("CLICKHOUSE_DB", "otel"),
 		},

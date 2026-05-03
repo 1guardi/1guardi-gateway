@@ -245,3 +245,13 @@ func TestEvaluate_DisabledRuleIgnored(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, decision.Allowed)
 }
+func TestEngine_Cache(t *testing.T) {
+	eng := NewEngine(nil, nil)
+	err := eng.InvalidateCache(context.Background(), 1)
+	assert.NoError(t, err)
+}
+
+func TestEngine_cacheKey(t *testing.T) {
+	eng := NewEngine(nil, nil)
+	assert.Equal(t, "gw:guardrails:1", eng.cacheKey(1))
+}

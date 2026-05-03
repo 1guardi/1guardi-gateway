@@ -175,7 +175,7 @@ func extractTextFromResponse(provider string, body []byte) string {
 	return ""
 }
 
-// emitGuardrailEvents records fired guardrail rules as OTel span events.
+// emitGuardrailEvents records fired guardrail rules as events on the given span.
 func emitGuardrailEvents(span trace.Span, fired []guardrails.FireEvent) {
 	for _, ev := range fired {
 		span.AddEvent("guardrail.fired", trace.WithAttributes(
@@ -210,15 +210,16 @@ func emitGuardrailLogs(ctx context.Context, fired []guardrails.FireEvent, tenant
 }
 
 // handleChatCompletions handles POST /v1/chat/completions.
-// Pipeline:
-//  1. Parse + validate request
-//  2. Input guardrail check
-//  3. Route to upstream LLM via router (with circuit breaker)
-//  4. Stream or buffer response back, tracking TTFT + TPS
-//  5. Output guardrail check (blocking for non-streaming; log-only for streaming)
-//  6. Emit OTel span with gen_ai.* attributes
+// Span hierarchy per request (all nested under the agentTraceMiddleware's agent→thread spans):
+//
+//	guardrail.execution (scope=input)
+//	llm.generation
+//	  └── upstream.call
+//	guardrail.execution (scope=output, non-streaming only)
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	// 1. Read and parse raw body so we can both validate and forward.
+	baseCtx := r.Context()
+
+	// 1. Read and parse raw body.
 	rawBody, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body", "invalid_request_error")
@@ -231,7 +232,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract model (required).
 	var model string
 	if raw, ok := fields["model"]; ok {
 		if err := json.Unmarshal(raw, &model); err != nil || model == "" {
@@ -243,36 +243,39 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate messages present.
 	if _, ok := fields["messages"]; !ok {
 		writeError(w, http.StatusBadRequest, "messages is required", "invalid_request_error")
 		return
 	}
 
-	// Extract stream flag.
 	var streaming bool
 	if raw, ok := fields["stream"]; ok {
-		json.Unmarshal(raw, &streaming) //nolint:errcheck — bool unmarshal never errors on valid JSON
+		json.Unmarshal(raw, &streaming) //nolint:errcheck
 	}
 
-	// 2. Input guardrail check — runs before the request reaches any upstream.
-	tc := TenantCtx(r.Context())
+	tc := TenantCtx(baseCtx)
+	inputContent := flattenMessages(fields["messages"])
+
+	// 2. Input guardrail span.
 	if s.guardrails != nil {
-		inputContent := flattenMessages(fields["messages"])
-		if decision, err := s.guardrails.Evaluate(r.Context(), guardrails.EvalContext{
+		grCtx, grSpan := tracer.Start(baseCtx, "guardrail.execution",
+			trace.WithAttributes(attribute.String("guardrail.scope", guardrails.ScopeInput)))
+		decision, evalErr := s.guardrails.Evaluate(grCtx, guardrails.EvalContext{
 			TenantID: tc.TenantID,
 			AgentID:  tc.AgentID,
 			Scope:    guardrails.ScopeInput,
 			Content:  inputContent,
-		}); err == nil {
-			emitGuardrailEvents(trace.SpanFromContext(r.Context()), decision.FiredRules)
-			emitGuardrailLogs(r.Context(), decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeInput)
-			if !decision.Allowed {
-				writeError(w, http.StatusForbidden,
-					"request blocked by guardrail: "+decision.FiredRules[0].RuleName,
-					"policy_error")
-				return
-			}
+		})
+		if evalErr == nil {
+			emitGuardrailEvents(grSpan, decision.FiredRules)
+			emitGuardrailLogs(grCtx, decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeInput)
+		}
+		grSpan.End()
+		if evalErr == nil && !decision.Allowed {
+			writeError(w, http.StatusForbidden,
+				"request blocked by guardrail: "+decision.FiredRules[0].RuleName,
+				"policy_error")
+			return
 		}
 	}
 
@@ -290,8 +293,6 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. If streaming, inject stream_options.include_usage so we get token counts
-	//    in the final SSE chunk without extra requests.
 	forwardBody := rawBody
 	if streaming {
 		fields["stream_options"] = json.RawMessage(`{"include_usage":true}`)
@@ -301,9 +302,25 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Build and send upstream request.
-	upstreamReq, err := s.buildUpstreamRequest(r.Context(), endpoint, model, forwardBody)
+	// 4. llm.generation span wraps the full upstream round-trip.
+	llmCtx, llmSpan := tracer.Start(baseCtx, "llm.generation",
+		trace.WithAttributes(
+			attribute.String("gen_ai.model", model),
+			attribute.String("gen_ai.provider", endpoint.Provider()),
+			attribute.String("gen_ai.prompt", truncate(inputContent)),
+			attribute.String("agent.id", tc.AgentID),
+			attribute.String("tenant.id", tc.TenantID),
+			attribute.String("thread.id", tc.ThreadID),
+		))
+
+	// 5. upstream.call sub-span — just the HTTP dial + response headers.
+	upCtx, upSpan := tracer.Start(llmCtx, "upstream.call",
+		trace.WithAttributes(attribute.String("gen_ai.provider", endpoint.Provider())))
+
+	upstreamReq, err := s.buildUpstreamRequest(upCtx, endpoint, model, forwardBody)
 	if err != nil {
+		upSpan.End()
+		llmSpan.End()
 		writeError(w, http.StatusInternalServerError, err.Error(), "api_error")
 		return
 	}
@@ -312,18 +329,21 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
 		endpoint.RecordError()
+		upSpan.RecordError(err)
+		upSpan.End()
+		llmSpan.End()
 		writeError(w, http.StatusBadGateway, "upstream request failed", "api_error")
 		return
 	}
+	upSpan.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	upSpan.End()
 	defer resp.Body.Close()
 
-	// 5. Copy upstream response headers.
 	for k, v := range resp.Header {
 		w.Header()[k] = v
 	}
 	w.WriteHeader(resp.StatusCode)
 
-	// 6. Stream or buffer the response, collecting telemetry.
 	var (
 		ttftMS       float64
 		inputTokens  int
@@ -332,35 +352,38 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	if streaming {
 		ttftMS, inputTokens, outputTokens = s.proxySSE(w, endpoint.Provider(), resp.Body, start)
-		// Output guardrails for streaming are deferred (content already sent to client).
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		ttftMS = float64(time.Since(start).Milliseconds())
 		inputTokens, outputTokens = s.extractUsage(endpoint.Provider(), body)
+		outputContent := extractTextFromResponse(endpoint.Provider(), body)
 
-		// Output guardrail check — runs before writing to client so we can block.
+		// 6. Output guardrail span — blocks before writing to client.
 		if s.guardrails != nil {
-			outputContent := extractTextFromResponse(endpoint.Provider(), body)
-			if decision, err := s.guardrails.Evaluate(r.Context(), guardrails.EvalContext{
+			grCtx, grSpan := tracer.Start(baseCtx, "guardrail.execution",
+				trace.WithAttributes(attribute.String("guardrail.scope", guardrails.ScopeOutput)))
+			decision, evalErr := s.guardrails.Evaluate(grCtx, guardrails.EvalContext{
 				TenantID: tc.TenantID, AgentID: tc.AgentID,
 				Scope: guardrails.ScopeOutput, Content: outputContent,
-			}); err == nil {
-				span := trace.SpanFromContext(r.Context())
-				emitGuardrailEvents(span, decision.FiredRules)
-				emitGuardrailLogs(r.Context(), decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeOutput)
-				if !decision.Allowed {
-					writeError(w, http.StatusInternalServerError,
-						"response blocked by guardrail: "+decision.FiredRules[0].RuleName,
-						"policy_error")
-					return
-				}
+			})
+			if evalErr == nil {
+				emitGuardrailEvents(grSpan, decision.FiredRules)
+				emitGuardrailLogs(grCtx, decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeOutput)
+			}
+			grSpan.End()
+			if evalErr == nil && !decision.Allowed {
+				llmSpan.End()
+				writeError(w, http.StatusInternalServerError,
+					"response blocked by guardrail: "+decision.FiredRules[0].RuleName,
+					"policy_error")
+				return
 			}
 		}
 
+		llmSpan.SetAttributes(attribute.String("gen_ai.completion", truncate(outputContent)))
 		w.Write(body) //nolint:errcheck — client disconnect is non-fatal
 	}
 
-	// 7. Record signals and emit OTel attributes.
 	totalSec := time.Since(start).Seconds()
 	var tps float64
 	if totalSec > 0 && outputTokens > 0 {
@@ -373,17 +396,14 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		endpoint.RecordSuccess(ttftMS, tps)
 	}
 
-	span := trace.SpanFromContext(r.Context())
-	span.SetAttributes(
-		attribute.String("gen_ai.model", model),
-		attribute.String("gen_ai.thread.id", tc.ThreadID),
-		attribute.String("gen_ai.agent.id", tc.AgentID),
+	llmSpan.SetAttributes(
 		attribute.Int("gen_ai.input.tokens", inputTokens),
 		attribute.Int("gen_ai.output.tokens", outputTokens),
 		attribute.Float64("gen_ai.ttft_ms", ttftMS),
 		attribute.Float64("gen_ai.tps", tps),
 		attribute.Float64("gen_ai.cost.usd", calcCost(model, inputTokens, outputTokens)),
 	)
+	llmSpan.End()
 }
 
 // proxySSE streams an SSE response to w, returning TTFT ms and token counts from
@@ -574,7 +594,11 @@ func (s *Server) extractUsage(provider string, body []byte) (int, int) {
 }
 
 // handleAnthropicMessages handles POST /v1/messages for native Anthropic SDKs/CLIs.
+// Span hierarchy: llm.generation → upstream.call (same model as handleChatCompletions,
+// minus guardrails which operate on the OpenAI-compat surface only).
 func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	baseCtx := r.Context()
+
 	rawBody, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body", "invalid_request_error")
@@ -582,8 +606,9 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		Model  string `json:"model"`
-		Stream bool   `json:"stream"`
+		Model    string          `json:"model"`
+		Stream   bool            `json:"stream"`
+		Messages json.RawMessage `json:"messages"`
 	}
 	if err := json.Unmarshal(rawBody, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json", "invalid_request_error")
@@ -595,7 +620,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tc := TenantCtx(r.Context())
+	tc := TenantCtx(baseCtx)
 	var tenantID uint
 	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
 
@@ -609,17 +634,31 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// For now, we assume Anthropic protocol passthrough.
-	// In the future, we can add Anthropic -> OpenAI translation here if needed.
 	baseURL := strings.TrimRight(endpoint.BaseURL(), "/")
 	url := baseURL + "/v1/messages"
 
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, url, bytes.NewReader(rawBody))
+	// llm.generation span wraps the full upstream round-trip.
+	llmCtx, llmSpan := tracer.Start(baseCtx, "llm.generation",
+		trace.WithAttributes(
+			attribute.String("gen_ai.model", req.Model),
+			attribute.String("gen_ai.provider", endpoint.Provider()),
+			attribute.String("gen_ai.prompt", truncate(flattenMessages(req.Messages))),
+			attribute.String("agent.id", tc.AgentID),
+			attribute.String("tenant.id", tc.TenantID),
+			attribute.String("thread.id", tc.ThreadID),
+		))
+
+	// upstream.call sub-span — just the HTTP dial + response headers.
+	upCtx, upSpan := tracer.Start(llmCtx, "upstream.call",
+		trace.WithAttributes(attribute.String("gen_ai.provider", endpoint.Provider())))
+
+	upstreamReq, err := http.NewRequestWithContext(upCtx, http.MethodPost, url, bytes.NewReader(rawBody))
 	if err != nil {
+		upSpan.End()
+		llmSpan.End()
 		writeError(w, http.StatusInternalServerError, "failed to build upstream request", "api_error")
 		return
 	}
-
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("x-api-key", endpoint.APIKey())
 	upstreamReq.Header.Set("anthropic-version", "2023-06-01")
@@ -628,9 +667,14 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
 		endpoint.RecordError()
+		upSpan.RecordError(err)
+		upSpan.End()
+		llmSpan.End()
 		writeError(w, http.StatusBadGateway, "upstream request failed", "api_error")
 		return
 	}
+	upSpan.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+	upSpan.End()
 	defer resp.Body.Close()
 
 	for k, v := range resp.Header {
@@ -647,10 +691,11 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		body, _ := io.ReadAll(resp.Body)
 		ttftMS = float64(time.Since(start).Milliseconds())
 		inputTokens, outputTokens = s.extractUsage(endpoint.Provider(), body)
-		w.Write(body)
+		llmSpan.SetAttributes(attribute.String("gen_ai.completion",
+			truncate(extractTextFromResponse(endpoint.Provider(), body))))
+		w.Write(body) //nolint:errcheck
 	}
 
-	// Record telemetry
 	totalSec := time.Since(start).Seconds()
 	var tps float64
 	if totalSec > 0 && outputTokens > 0 {
@@ -663,17 +708,14 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		endpoint.RecordSuccess(ttftMS, tps)
 	}
 
-	span := trace.SpanFromContext(r.Context())
-	span.SetAttributes(
-		attribute.String("gen_ai.model", req.Model),
-		attribute.String("gen_ai.thread.id", tc.ThreadID),
-		attribute.String("gen_ai.agent.id", tc.AgentID),
+	llmSpan.SetAttributes(
 		attribute.Int("gen_ai.input.tokens", inputTokens),
 		attribute.Int("gen_ai.output.tokens", outputTokens),
 		attribute.Float64("gen_ai.ttft_ms", ttftMS),
 		attribute.Float64("gen_ai.tps", tps),
 		attribute.Float64("gen_ai.cost.usd", calcCost(req.Model, inputTokens, outputTokens)),
 	)
+	llmSpan.End()
 }
 
 // handleCompletions handles POST /v1/completions (legacy).

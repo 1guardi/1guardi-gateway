@@ -85,6 +85,8 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 				r.With(srv.RequirePermission("tenant.update")).Patch("/rules/{ruleID}", srv.handleUpdateRule)
 				r.With(srv.RequirePermission("tenant.update")).Delete("/rules/{ruleID}", srv.handleDeleteRule)
 				r.With(srv.RequirePermission("tenant.read")).Get("/guardrail-events", srv.handleGuardrailEvents)
+				r.With(srv.RequirePermission("tenant.read")).Get("/traces", srv.handleListTraces)
+				r.With(srv.RequirePermission("tenant.read")).Get("/traces/{traceID}/spans", srv.handleGetTraceSpans)
 
 				r.With(srv.RequirePermission("agents.read")).Get("/agents", srv.handleListAgents)
 				r.With(srv.RequirePermission("agents.manage")).Post("/agents", srv.handleCreateAgent)

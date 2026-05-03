@@ -52,6 +52,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, 
 	mux.Use(middleware.RealIP)
 	mux.Use(middleware.Recoverer)
 	mux.Use(srv.Authenticate)
+	mux.Use(agentTraceMiddleware)
 
 	// OpenAI-compatible surface
 	mux.Post("/v1/chat/completions", srv.handleChatCompletions)

@@ -31,14 +31,14 @@ interface APIKeyVM {
 function toVM(k: APIKeyResponse): APIKeyVM {
   return {
     id: String(k.ID),
-    name: k.Name,
-    prefix: k.Prefix,
-    suffix: k.Suffix,
-    tenantId: String(k.TenantID),
-    agentId: k.AgentID != null ? String(k.AgentID) : undefined,
-    userId: k.UserID != null ? String(k.UserID) : undefined,
-    lastUsed: k.LastUsedAt ? new Date(k.LastUsedAt).toLocaleDateString() : 'Never',
-    isActive: k.IsActive,
+    name: k.name,
+    prefix: k.prefix,
+    suffix: k.suffix,
+    tenantId: String(k.tenant_id),
+    agentId: k.agent_id != null ? String(k.agent_id) : undefined,
+    userId: k.user_id != null ? String(k.user_id) : undefined,
+    lastUsed: k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never',
+    isActive: k.is_active,
     createdAt: new Date(k.CreatedAt).toLocaleDateString(),
   }
 }

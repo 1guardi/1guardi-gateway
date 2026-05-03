@@ -4,14 +4,14 @@ import { apiClient } from './client'
 export interface APIKeyResponse {
   ID: number
   CreatedAt: string
-  Name: string
-  Prefix: string
-  Suffix: string
-  TenantID: number
-  AgentID: number | null
-  UserID: number | null
-  LastUsedAt: string | null
-  IsActive: boolean
+  name: string
+  prefix: string
+  suffix: string
+  tenant_id: number
+  agent_id: number | null
+  user_id: number | null
+  last_used_at: string | null
+  is_active: boolean
 }
 
 export interface CreateKeyResponse extends APIKeyResponse {

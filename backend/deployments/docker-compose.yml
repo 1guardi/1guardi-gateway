@@ -17,6 +17,10 @@ services:
       OTEL_COLLECTOR_ADDR: otel-collector:4317
       REDIS_ADDR: redis:6379
       POSTGRES_DSN: postgres://gateway:gateway@postgres:5432/gateway?sslmode=disable
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_USER: otel
+      CLICKHOUSE_PASSWORD: otel
+      CLICKHOUSE_DB: otel
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       JWT_SECRET: ${JWT_SECRET}
     depends_on:
@@ -91,6 +95,34 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── ClickHouse ────────────────────────────────────────────────────────────────
+  clickhouse:
+    profiles: ["infra"]
+    image: clickhouse/clickhouse-server:25.12
+    environment:
+      CLICKHOUSE_DB: otel
+      CLICKHOUSE_USER: otel
+      CLICKHOUSE_PASSWORD: otel
+    ports:
+      - "8123:8123"   # HTTP interface — admin API queries here
+      - "9001:9000"   # Native protocol — otelcol writes here
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user otel --password otel --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # ── OTel Collector ────────────────────────────────────────────────────────────
   otel-collector:
     profiles: ["infra"]
@@ -108,6 +140,7 @@ services:
           memory: 256M
     depends_on:
       - jaeger
+      - clickhouse
     restart: unless-stopped
 
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
@@ -135,3 +168,4 @@ volumes:
   postgres_data:
   redis_data:
   jaeger_data:
+  clickhouse_data:

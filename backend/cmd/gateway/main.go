@@ -16,6 +16,7 @@ import (
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/admin"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/clickhouse"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
@@ -114,6 +115,18 @@ func main() {
 	// Shared guardrails engine — used by both the proxy hot path and admin CRUD.
 	grEngine := guardrails.NewEngine(database, redisCache)
 
+	// ClickHouse client for analytics queries (nil-safe: admin handlers zero-fill when unavailable).
+	chClient, err := clickhouse.NewClient(
+		cfg.ClickHouse.Addr,
+		cfg.ClickHouse.User,
+		cfg.ClickHouse.Password,
+		cfg.ClickHouse.Database,
+	)
+	if err != nil {
+		slog.Warn("clickhouse unavailable, analytics disabled", "err", err)
+		chClient = nil
+	}
+
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
@@ -125,7 +138,7 @@ func main() {
 	}
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.NewRouter(cfg, database, router, redisCache, modelsSvc, grEngine),
+		Handler:      admin.NewRouter(cfg, database, router, redisCache, modelsSvc, grEngine, chClient),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

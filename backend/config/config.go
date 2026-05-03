@@ -11,15 +11,23 @@ import (
 )
 
 type Config struct {
-	Env       string
-	ProxyPort int
-	AdminPort int
-	Telemetry TelemetryConfig
-	Auth      APIKeyConfig
-	Admin     AdminConfig
-	Redis     RedisConfig
-	Postgres  PostgresConfig
-	Upstreams []UpstreamConfig
+	Env        string
+	ProxyPort  int
+	AdminPort  int
+	Telemetry  TelemetryConfig
+	Auth       APIKeyConfig
+	Admin      AdminConfig
+	Redis      RedisConfig
+	Postgres   PostgresConfig
+	ClickHouse ClickHouseConfig
+	Upstreams  []UpstreamConfig
+}
+
+type ClickHouseConfig struct {
+	Addr     string // native protocol address, e.g. "localhost:9000"
+	User     string
+	Password string
+	Database string
 }
 
 type AdminConfig struct {
@@ -80,6 +88,12 @@ func Load() (*Config, error) {
 		},
 		Postgres: PostgresConfig{
 			DSN: env("POSTGRES_DSN", "postgres://gateway:gateway@localhost:6432/gateway?sslmode=disable"),
+		},
+		ClickHouse: ClickHouseConfig{
+			Addr:     env("CLICKHOUSE_ADDR", "localhost:9001"),
+			User:     env("CLICKHOUSE_USER", "otel"),
+			Password: env("CLICKHOUSE_PASSWORD", "otel"),
+			Database: env("CLICKHOUSE_DB", "otel"),
 		},
 		Upstreams: loadUpstreams(),
 	}, nil

@@ -26,6 +26,18 @@ export interface GuardrailRuleResponse {
   managed_id: string
   version: string
   enabled: boolean
+  fires24h: number    // injected by admin API from ClickHouse
+}
+
+export interface GuardrailEvent {
+  timestamp: string
+  trace_id: string
+  rule_id: string
+  rule_name: string
+  action: string
+  reason: string
+  scope: string
+  agent_id: string
 }
 
 export interface CreateRuleRequest {
@@ -93,6 +105,21 @@ export function useUpdateRule(tenantId: string | null) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardrails', tenantId] })
     },
+  })
+}
+
+export function useGuardrailEvents(tenantId: string | null, ruleId: string | null, limit = 50) {
+  return useQuery({
+    queryKey: ['guardrail-events', tenantId, ruleId],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit) })
+      if (ruleId) params.set('rule_id', ruleId)
+      const { data } = await apiClient.get<GuardrailEvent[]>(
+        `/tenants/${tenantId}/guardrail-events?${params}`
+      )
+      return data
+    },
+    enabled: !!tenantId,
   })
 }
 

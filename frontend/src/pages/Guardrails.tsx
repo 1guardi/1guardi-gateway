@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { ACTION_STYLES } from '@/lib/styles.ts'
-import { useGuardrailRules, useUpdateRule, useCreateRule, type GuardrailRuleResponse, type CreateRuleRequest } from '../api/guardrails'
+import { useGuardrailRules, useUpdateRule, useCreateRule, useGuardrailEvents, type GuardrailRuleResponse, type CreateRuleRequest } from '../api/guardrails'
 
 // Local UI shape used throughout this file.
 interface UIRule {
@@ -38,7 +38,7 @@ function toUIRule(r: GuardrailRuleResponse): UIRule {
     mode: r.mode,
     managed: r.managed,
     enabled: r.enabled,
-    fires24h: 0, // metric not yet returned by API
+    fires24h: r.fires24h ?? 0,
     agentId: r.agent_id != null ? String(r.agent_id) : undefined,
   }
 }
@@ -106,12 +106,15 @@ function RuleRow({ rule, active, readOnly, onToggle, onClick }: {
   )
 }
 
-function RuleDetail({ rule, readOnly, onToggle, onClose }: {
+function RuleDetail({ rule, tenantId, readOnly, onToggle, onClose }: {
   rule: UIRule
+  tenantId: string | null
   readOnly?: boolean
   onToggle: (id: string, enabled: boolean) => void
   onClose: () => void
 }) {
+  const { data: events = [], isLoading: eventsLoading } = useGuardrailEvents(tenantId, rule.id, 20)
+
   const fields = [
     ['ID',        rule.id],
     ['SCOPE',     rule.agentId ? `AGENT: ${rule.agentId}` : 'GLOBAL'],
@@ -154,6 +157,37 @@ function RuleDetail({ rule, readOnly, onToggle, onClose }: {
             {rule.enabled ? 'Disable rule' : 'Enable rule'}
           </Button>
         )}
+        <Separator />
+        <div>
+          <p className="font-mono text-[9px] tracking-widest text-muted-foreground mb-2">RECENT FIRES</p>
+          {eventsLoading ? (
+            <div className="space-y-1.5">
+              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : events.length === 0 ? (
+            <p className="font-mono text-[10px] text-muted-foreground/40 text-center py-3">no events yet</p>
+          ) : (
+            <ScrollArea className="max-h-64">
+              <div className="space-y-1">
+                {events.map((ev, i) => (
+                  <div key={i} className="rounded border border-border/50 px-2 py-1.5 space-y-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="outline" className={`font-mono text-[9px] h-4 px-1 ${ACTION_STYLES[ev.action] ?? ''}`}>
+                        {ev.action}
+                      </Badge>
+                      <span className="font-mono text-[9px] text-muted-foreground/60 truncate">
+                        {ev.timestamp.replace('T', ' ').replace('Z', '')}
+                      </span>
+                    </div>
+                    <p className="font-mono text-[10px] text-muted-foreground truncate" title={ev.reason}>
+                      {ev.scope} · {ev.reason || '—'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -488,6 +522,7 @@ export default function Guardrails({ selectedAgent, tenantId }: { selectedAgent:
         {selected && (
           <RuleDetail
             rule={selected}
+            tenantId={tenantId}
             readOnly={isAgentMode && selectedIsGlobal}
             onToggle={toggle}
             onClose={() => setSelected(null)}

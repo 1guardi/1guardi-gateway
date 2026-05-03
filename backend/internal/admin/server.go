@@ -17,6 +17,7 @@ import (
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/clickhouse"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
@@ -32,12 +33,13 @@ type Server struct {
 	redis      *redis.Client
 	modelsSvc  providers.ModelProvider
 	guardrails *guardrails.Engine
+	ch         *clickhouse.Client
 }
 
 // NewRouter builds the internal admin API handler.
 // This port should never be exposed publicly — bind to 127.0.0.1 in production
 // or keep it cluster-internal in Kubernetes.
-func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc providers.ModelProvider, gr *guardrails.Engine) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc providers.ModelProvider, gr *guardrails.Engine, ch *clickhouse.Client) http.Handler {
 	srv := &Server{
 		db:         database,
 		cfg:        cfg,
@@ -45,6 +47,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 		redis:      redis,
 		modelsSvc:  modelsSvc,
 		guardrails: gr,
+		ch:         ch,
 	}
 
 	mux := chi.NewRouter()
@@ -81,6 +84,7 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 				r.With(srv.RequirePermission("tenant.update")).Post("/rules", srv.handleCreateRule)
 				r.With(srv.RequirePermission("tenant.update")).Patch("/rules/{ruleID}", srv.handleUpdateRule)
 				r.With(srv.RequirePermission("tenant.update")).Delete("/rules/{ruleID}", srv.handleDeleteRule)
+				r.With(srv.RequirePermission("tenant.read")).Get("/guardrail-events", srv.handleGuardrailEvents)
 
 				r.With(srv.RequirePermission("agents.read")).Get("/agents", srv.handleListAgents)
 				r.With(srv.RequirePermission("agents.manage")).Post("/agents", srv.handleCreateAgent)
@@ -653,6 +657,11 @@ func (s *Server) seedManagedRules(tenantID uint) {
 	}
 }
 
+type ruleWithStats struct {
+	db.GuardrailRule
+	Fires24h int `json:"fires24h"`
+}
+
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
 	s.seedManagedRules(uint(tenantID))
@@ -670,8 +679,49 @@ func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Fetch fires/24h counts from ClickHouse; silently zero-fill if unavailable.
+	countByRule := map[string]int{}
+	if s.ch != nil {
+		if counts, err := s.ch.GuardrailFireCounts(r.Context(), strconv.Itoa(tenantID)); err == nil {
+			for _, c := range counts {
+				countByRule[c.RuleID] = int(c.Fires24h)
+			}
+		}
+	}
+
+	out := make([]ruleWithStats, len(rules))
+	for i, rule := range rules {
+		out[i] = ruleWithStats{
+			GuardrailRule: rule,
+			Fires24h:      countByRule[strconv.Itoa(int(rule.ID))],
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rules) //nolint:errcheck
+	json.NewEncoder(w).Encode(out) //nolint:errcheck
+}
+
+func (s *Server) handleGuardrailEvents(w http.ResponseWriter, r *http.Request) {
+	tenantID := chi.URLParam(r, "tenantID")
+	ruleID := r.URL.Query().Get("rule_id")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	if s.ch == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("[]")) //nolint:errcheck
+		return
+	}
+
+	events, err := s.ch.GuardrailEvents(r.Context(), tenantID, ruleID, limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = []clickhouse.GuardrailEvent{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(events) //nolint:errcheck
 }
 
 func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {

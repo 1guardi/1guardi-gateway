@@ -52,7 +52,7 @@ func TestHandleLogin(t *testing.T) {
 	cfg := testCfg()
 	cfg.Admin.Email = "admin@example.com"
 	cfg.Admin.Password = "secret"
-	router := NewRouter(cfg, database, nil, nil, nil, nil)
+	router := NewRouter(cfg, database, nil, nil, nil, nil, nil)
 
 	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
 
@@ -71,7 +71,7 @@ func TestHandleLogin(t *testing.T) {
 func TestHandleLogin_WrongPassword(t *testing.T) {
 	database := setupTestDB(t)
 	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	body := `{"email":"admin@example.com","password":"wrong"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(body))
@@ -83,7 +83,7 @@ func TestHandleLogin_WrongPassword(t *testing.T) {
 
 func TestRequireAuth_Missing(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
 	rr := httptest.NewRecorder()
@@ -94,7 +94,7 @@ func TestRequireAuth_Missing(t *testing.T) {
 
 func TestTenantHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	// Create tenant
 	body := `{"name":"Test Tenant"}`
@@ -122,7 +122,7 @@ func TestTenantHandlers(t *testing.T) {
 
 func TestGetTenantHandler(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	// Create via DB directly
 	tenant := db.Tenant{Name: "direct", APIKey: "k"}
@@ -141,7 +141,7 @@ func TestGetTenantHandler(t *testing.T) {
 func TestDeleteTenantHandler(t *testing.T) {
 	database := setupTestDB(t)
 	r := llmrouter.New([]config.UpstreamConfig{})
-	router := NewRouter(testCfg(), database, r, nil, nil, nil)
+	router := NewRouter(testCfg(), database, r, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "to-delete", APIKey: "k"}
 	database.Create(&tenant)
@@ -183,7 +183,7 @@ func TestHandleReady(t *testing.T) {
 
 func TestHandleListEndpoints_NilRouter(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	req := authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil))
 	rr := httptest.NewRecorder()
@@ -200,7 +200,7 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 	r := llmrouter.New([]config.UpstreamConfig{
 		{KeyID: "openai-primary", Model: "gpt-4o", BaseURL: "https://api.openai.com", APIKey: "sk-test"},
 	})
-	handler := NewRouter(testCfg(), database, r, nil, nil, nil)
+	handler := NewRouter(testCfg(), database, r, nil, nil, nil, nil)
 
 	req := authRequest(t, httptest.NewRequest(http.MethodGet, "/api/v1/router/endpoints", nil))
 	rr := httptest.NewRecorder()
@@ -217,7 +217,7 @@ func TestHandleListEndpoints_WithRouter(t *testing.T) {
 
 func TestAgentHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
@@ -242,7 +242,7 @@ func TestAgentHandlers(t *testing.T) {
 
 func TestKeyHandlers(t *testing.T) {
 	database := setupTestDB(t)
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
@@ -288,7 +288,7 @@ func TestKeyHandlers(t *testing.T) {
 func TestUpstreamHandlers(t *testing.T) {
 	database := setupTestDB(t)
 	r := llmrouter.New([]config.UpstreamConfig{})
-	router := NewRouter(testCfg(), database, r, nil, nil, nil)
+	router := NewRouter(testCfg(), database, r, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "tenant1"}
 	database.Create(&tenant)
@@ -333,7 +333,7 @@ func TestGuardrailRulesCRUD(t *testing.T) {
 	database := setupTestDB(t)
 	require.NoError(t, db.SeedRBAC(database))
 	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
-	router := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "test-tenant", APIKey: "test-key"}
 	require.NoError(t, database.Create(&tenant).Error)
@@ -388,7 +388,7 @@ func TestRBACAndMembers(t *testing.T) {
 	require.NoError(t, db.SeedSuperAdmin(database, "admin@example.com", "secret"))
 
 	cfg := testCfg()
-	handler := NewRouter(cfg, database, nil, nil, nil, nil)
+	handler := NewRouter(cfg, database, nil, nil, nil, nil, nil)
 
 	// 1. Create a tenant and a regular user
 	tenant := db.Tenant{Name: "Tenant A", APIKey: "key-a"}
@@ -486,7 +486,7 @@ func TestRBACAndMembers(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	database := setupTestDB(t)
-	handler := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	handler := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	database.Create(&db.User{Name: "User 1", Email: "u1@e.com"})
 	database.Create(&db.User{Name: "User 2", Email: "u2@e.com"})
@@ -505,7 +505,7 @@ func TestListUsers(t *testing.T) {
 
 func TestUpdateTenant(t *testing.T) {
 	database := setupTestDB(t)
-	handler := NewRouter(testCfg(), database, nil, nil, nil, nil)
+	handler := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
 	tenant := db.Tenant{Name: "Old Name", Description: "Old Desc", APIKey: "key"}
 	database.Create(&tenant)
@@ -543,7 +543,7 @@ func (m *mockModelProvider) GetModels(ctx context.Context, provider, apiKey, bas
 func TestListProviderModels(t *testing.T) {
 	database := setupTestDB(t)
 	mock := &mockModelProvider{models: []string{"gpt-4", "gpt-3.5-turbo"}}
-	handler := NewRouter(testCfg(), database, nil, nil, mock, nil)
+	handler := NewRouter(testCfg(), database, nil, nil, mock, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/openai/models", bytes.NewBufferString(`{"apiKey":"test"}`))
 	req = authRequest(t, req)

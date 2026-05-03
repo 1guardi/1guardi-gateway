@@ -21,12 +21,27 @@ processors:
         - 'attributes["url.path"] == "/ready"'
 
 exporters:
-  # Jaeger for local dev — swap for your observability stack in production
+  # Jaeger for local dev trace UI
   otlp/jaeger:
     endpoint: jaeger:4317
     tls:
       insecure: true
-  # Logs spans to collector stdout at debug level — handy during development
+  # ClickHouse — traces + logs for analytics and audit queries
+  clickhouse:
+    endpoint: tcp://clickhouse:9000?dial_timeout=10s&compress=lz4
+    database: otel
+    username: otel
+    password: otel
+    ttl: 720h
+    logs_table_name: otel_logs
+    traces_table_name: otel_traces
+    create_schema: true
+    timeout: 5s
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
   debug:
     verbosity: basic
 
@@ -40,4 +55,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, filter/health]
-      exporters: [otlp/jaeger, debug]
+      exporters: [otlp/jaeger, clickhouse, debug]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouse, debug]

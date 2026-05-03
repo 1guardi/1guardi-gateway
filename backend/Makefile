@@ -45,4 +45,7 @@ logs:
 
 ## Tear down and remove volumes
 down:
-	docker compose -f deployments/docker-compose.yml --profile backend --profile infra down -v
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra down 
+
+downv:
+	docker compose -f deployments/docker-compose.yml --profile backend --profile infra down -v 

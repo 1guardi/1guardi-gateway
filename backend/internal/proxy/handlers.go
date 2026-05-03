@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
@@ -185,6 +187,28 @@ func emitGuardrailEvents(span trace.Span, fired []guardrails.FireEvent) {
 	}
 }
 
+// emitGuardrailLogs sends one OTel log record per fired rule.
+// These flow through otelcol into ClickHouse for audit and analytics queries.
+func emitGuardrailLogs(ctx context.Context, fired []guardrails.FireEvent, tenantID, agentID, scope string) {
+	logger := global.Logger("guardrails")
+	for _, ev := range fired {
+		var rec log.Record
+		rec.SetTimestamp(time.Now())
+		rec.SetSeverity(log.SeverityWarn)
+		rec.SetBody(log.StringValue("guardrail.fired"))
+		rec.AddAttributes(
+			log.Int("guardrail.rule_id", int(ev.RuleID)),
+			log.String("guardrail.rule_name", ev.RuleName),
+			log.String("guardrail.action", ev.Action),
+			log.String("guardrail.reason", ev.Reason),
+			log.String("scope", scope),
+			log.String("tenant_id", tenantID),
+			log.String("agent_id", agentID),
+		)
+		logger.Emit(ctx, rec)
+	}
+}
+
 // handleChatCompletions handles POST /v1/chat/completions.
 // Pipeline:
 //  1. Parse + validate request
@@ -242,6 +266,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			Content:  inputContent,
 		}); err == nil {
 			emitGuardrailEvents(trace.SpanFromContext(r.Context()), decision.FiredRules)
+			emitGuardrailLogs(r.Context(), decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeInput)
 			if !decision.Allowed {
 				writeError(w, http.StatusForbidden,
 					"request blocked by guardrail: "+decision.FiredRules[0].RuleName,
@@ -322,6 +347,7 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			}); err == nil {
 				span := trace.SpanFromContext(r.Context())
 				emitGuardrailEvents(span, decision.FiredRules)
+				emitGuardrailLogs(r.Context(), decision.FiredRules, tc.TenantID, tc.AgentID, guardrails.ScopeOutput)
 				if !decision.Allowed {
 					writeError(w, http.StatusInternalServerError,
 						"response blocked by guardrail: "+decision.FiredRules[0].RuleName,

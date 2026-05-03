@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from './client'
+import { setAdminToken } from './auth-storage'
 
 export interface LoginRequest {
   email: string
@@ -19,7 +20,7 @@ export function useLogin(onSuccess: () => void) {
       return data
     },
     onSuccess: (data) => {
-      localStorage.setItem('admin_token', data.token)
+      setAdminToken(data.token)
       queryClient.invalidateQueries()
       onSuccess()
     },

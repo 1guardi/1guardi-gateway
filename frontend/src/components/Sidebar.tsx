@@ -13,12 +13,12 @@ const navItems: NavItem[] = [
   { id: 'tenants',    label: 'Tenants',    tag: 'MULTI-TENANT', letter: 'N' },
   { id: 'router',     label: 'Router',     tag: 'ATC',          letter: 'R' },
   { id: 'agents',     label: 'Agents',     tag: 'FLEET',        letter: 'A' },
+  { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',     letter: 'G' },
   { id: 'api-keys',   label: 'API Keys',   tag: 'CREDENTIALS',  letter: 'K' },
-  { id: 'members',    label: 'Members',    tag: 'TEAM',         letter: 'M' },
   { id: 'upstreams',  label: 'Providers',  tag: 'UPSTREAM',     letter: 'U' },
+  { id: 'members',    label: 'Members',    tag: 'TEAM',         letter: 'M' },
   { id: 'overview',   label: 'Overview',   tag: 'TOWER VIEW',   letter: 'O' },
   { id: 'traces',     label: 'Traces',     tag: 'FLIGHT LOG',   letter: 'T' },
-  { id: 'guardrails', label: 'Guardrails', tag: 'AIRSPACE',     letter: 'G' },
   { id: 'pii-vault',  label: 'PII Vault',  tag: 'CARGO',        letter: 'P' },
 ]
 

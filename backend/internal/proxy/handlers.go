@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 )
 
@@ -103,14 +104,95 @@ func calcCost(model string, inputTokens, outputTokens int) float64 {
 	return (float64(inputTokens)*p.inputPerMTok + float64(outputTokens)*p.outputPerMTok) / 1_000_000
 }
 
+// flattenMessages extracts all text content from the raw JSON messages array
+// into a single string for guardrail evaluation.
+func flattenMessages(raw json.RawMessage) string {
+	var msgs []struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, m := range msgs {
+		// Content may be a plain string or an array of content blocks.
+		var s string
+		if err := json.Unmarshal(m.Content, &s); err == nil {
+			sb.WriteString(s)
+			sb.WriteByte('\n')
+			continue
+		}
+		var blocks []struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(m.Content, &blocks); err == nil {
+			for _, b := range blocks {
+				sb.WriteString(b.Text)
+				sb.WriteByte('\n')
+			}
+		}
+	}
+	return sb.String()
+}
+
+// extractTextFromResponse pulls assistant message text from a non-streaming
+// OpenAI or Anthropic response body for output guardrail evaluation.
+func extractTextFromResponse(provider string, body []byte) string {
+	switch provider {
+	case "anthropic":
+		var resp struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(body, &resp); err == nil {
+			var sb strings.Builder
+			for _, c := range resp.Content {
+				sb.WriteString(c.Text)
+				sb.WriteByte('\n')
+			}
+			return sb.String()
+		}
+	default: // openai-compatible
+		var resp struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(body, &resp); err == nil {
+			var sb strings.Builder
+			for _, c := range resp.Choices {
+				sb.WriteString(c.Message.Content)
+				sb.WriteByte('\n')
+			}
+			return sb.String()
+		}
+	}
+	return ""
+}
+
+// emitGuardrailEvents records fired guardrail rules as OTel span events.
+func emitGuardrailEvents(span trace.Span, fired []guardrails.FireEvent) {
+	for _, ev := range fired {
+		span.AddEvent("guardrail.fired", trace.WithAttributes(
+			attribute.Int("guardrail.rule_id", int(ev.RuleID)),
+			attribute.String("guardrail.rule_name", ev.RuleName),
+			attribute.String("guardrail.action", ev.Action),
+			attribute.String("guardrail.reason", ev.Reason),
+		))
+	}
+}
+
 // handleChatCompletions handles POST /v1/chat/completions.
 // Pipeline:
 //  1. Parse + validate request
-//  2. Route to upstream LLM via router (with circuit breaker)
-//  3. Stream response back, tracking TTFT + TPS
-//  4. Emit OTel span with gen_ai.* attributes
-//
-// Guardrails and PII masking are deferred to subsequent milestones.
+//  2. Input guardrail check
+//  3. Route to upstream LLM via router (with circuit breaker)
+//  4. Stream or buffer response back, tracking TTFT + TPS
+//  5. Output guardrail check (blocking for non-streaming; log-only for streaming)
+//  6. Emit OTel span with gen_ai.* attributes
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// 1. Read and parse raw body so we can both validate and forward.
 	rawBody, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
@@ -149,8 +231,27 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(raw, &streaming) //nolint:errcheck — bool unmarshal never errors on valid JSON
 	}
 
-	// 2. Pick upstream endpoint.
+	// 2. Input guardrail check — runs before the request reaches any upstream.
 	tc := TenantCtx(r.Context())
+	if s.guardrails != nil {
+		inputContent := flattenMessages(fields["messages"])
+		if decision, err := s.guardrails.Evaluate(r.Context(), guardrails.EvalContext{
+			TenantID: tc.TenantID,
+			AgentID:  tc.AgentID,
+			Scope:    guardrails.ScopeInput,
+			Content:  inputContent,
+		}); err == nil {
+			emitGuardrailEvents(trace.SpanFromContext(r.Context()), decision.FiredRules)
+			if !decision.Allowed {
+				writeError(w, http.StatusForbidden,
+					"request blocked by guardrail: "+decision.FiredRules[0].RuleName,
+					"policy_error")
+				return
+			}
+		}
+	}
+
+	// 3. Pick upstream endpoint.
 	var tenantID uint
 	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
 
@@ -206,10 +307,30 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	if streaming {
 		ttftMS, inputTokens, outputTokens = s.proxySSE(w, endpoint.Provider(), resp.Body, start)
+		// Output guardrails for streaming are deferred (content already sent to client).
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		ttftMS = float64(time.Since(start).Milliseconds())
 		inputTokens, outputTokens = s.extractUsage(endpoint.Provider(), body)
+
+		// Output guardrail check — runs before writing to client so we can block.
+		if s.guardrails != nil {
+			outputContent := extractTextFromResponse(endpoint.Provider(), body)
+			if decision, err := s.guardrails.Evaluate(r.Context(), guardrails.EvalContext{
+				TenantID: tc.TenantID, AgentID: tc.AgentID,
+				Scope: guardrails.ScopeOutput, Content: outputContent,
+			}); err == nil {
+				span := trace.SpanFromContext(r.Context())
+				emitGuardrailEvents(span, decision.FiredRules)
+				if !decision.Allowed {
+					writeError(w, http.StatusInternalServerError,
+						"response blocked by guardrail: "+decision.FiredRules[0].RuleName,
+						"policy_error")
+					return
+				}
+			}
+		}
+
 		w.Write(body) //nolint:errcheck — client disconnect is non-fatal
 	}
 

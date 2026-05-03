@@ -57,6 +57,7 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isGuideOpen, setIsGuideOpen] = useState(false)
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'global' | 'agent' | 'user'>('all')
 
   const { data: keysData = [] } = useAPIKeys(tenantId)
   const keys = keysData.map(toVM)
@@ -68,7 +69,11 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
   const agentMap: Record<string, string> = Object.fromEntries(agents.map((a) => [String(a.ID), a.Name]))
 
   const filteredKeys = keys.filter(k =>
-    selectedAgent === 'all' || !k.agentId || k.agentId === selectedAgent
+    (selectedAgent === 'all' || !k.agentId || k.agentId === selectedAgent) &&
+    (scopeFilter === 'all' ||
+     (scopeFilter === 'global' && !k.agentId && !k.userId) ||
+     (scopeFilter === 'agent' && !!k.agentId) ||
+     (scopeFilter === 'user' && !!k.userId))
   )
 
   const handleCreateKey = () => {
@@ -275,6 +280,14 @@ export default function APIKeys({ selectedAgent, tenantId, agents }: APIKeysProp
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Scope filter */}
+      <div className="flex gap-2">
+        <Button variant={scopeFilter === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setScopeFilter('all')} className="font-mono text-xs">All</Button>
+        <Button variant={scopeFilter === 'global' ? 'default' : 'outline'} size="sm" onClick={() => setScopeFilter('global')} className="font-mono text-xs">Global</Button>
+        <Button variant={scopeFilter === 'agent' ? 'default' : 'outline'} size="sm" onClick={() => setScopeFilter('agent')} className="font-mono text-xs">Agent</Button>
+        <Button variant={scopeFilter === 'user' ? 'default' : 'outline'} size="sm" onClick={() => setScopeFilter('user')} className="font-mono text-xs">User</Button>
       </div>
 
       <Card>

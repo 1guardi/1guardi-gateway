@@ -17,6 +17,7 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/admin"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/proxy"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
@@ -110,10 +111,13 @@ func main() {
 	// Single router instance shared by both servers so admin can observe live metrics.
 	router := llmrouter.New(upstreamConfigs)
 
+	// Shared guardrails engine — used by both the proxy hot path and admin CRUD.
+	grEngine := guardrails.NewEngine(database, redisCache)
+
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
-		Handler: proxy.NewRouter(cfg, database, redisCache, router),
+		Handler: proxy.NewRouter(cfg, database, redisCache, router, grEngine),
 		// Long write timeout to accommodate streaming LLM responses
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,
@@ -121,7 +125,7 @@ func main() {
 	}
 	adminSrv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.AdminPort),
-		Handler:      admin.NewRouter(cfg, database, router, redisCache, modelsSvc),
+		Handler:      admin.NewRouter(cfg, database, router, redisCache, modelsSvc, grEngine),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,

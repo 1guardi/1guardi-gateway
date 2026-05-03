@@ -90,6 +90,24 @@ type TenantMember struct {
 	Role     Role
 }
 
+// GuardrailRule defines a policy evaluated against inbound/outbound LLM content.
+type GuardrailRule struct {
+	gorm.Model
+	TenantID  uint   `gorm:"not null;index" json:"tenant_id"`
+	AgentID   *uint  `gorm:"index" json:"agent_id"`                          // nil = applies to all agents
+	Name      string `gorm:"not null" json:"name"`
+	Priority  int    `gorm:"not null;default:100" json:"priority"`
+	Scope     string `gorm:"not null" json:"scope"`                          // CSV: "input", "output", "tool_call"
+	Direction string `gorm:"not null;default:'both'" json:"direction"`       // "inbound"|"outbound"|"both"
+	Condition string `gorm:"type:text" json:"condition"`                     // JSON-encoded Condition struct
+	Action    string `gorm:"not null" json:"action"`                         // "block"|"log"|"tag"|"rewrite"|"shadow"|"substitute"
+	Mode      string `gorm:"not null;default:'parallel'" json:"mode"`
+	Managed   bool   `gorm:"default:false" json:"managed"`
+	ManagedID string `json:"managed_id"`                                     // e.g., "prompt-injection"
+	Version   string `json:"version"`
+	Enabled   bool   `gorm:"default:true" json:"enabled"`
+}
+
 // AutoMigrate runs schema migrations for all models.
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -101,5 +119,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&Role{},
 		&Permission{},
 		&TenantMember{},
+		&GuardrailRule{},
 	)
 }

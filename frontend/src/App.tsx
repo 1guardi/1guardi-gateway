@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import Sidebar from './components/Sidebar.tsx'
@@ -17,6 +17,7 @@ import Tenants from './pages/Tenants.tsx'
 import { useTenants } from './api/tenants.ts'
 import { useAgents } from './api/agents.ts'
 import { jwtDecode } from 'jwt-decode'
+import { ADMIN_LOGOUT_EVENT } from './api/auth-storage'
 
 export type Page = 'overview' | 'traces' | 'guardrails' | 'pii-vault' | 'router' | 'agents' | 'api-keys' | 'upstreams' | 'tenants' | 'members'
 
@@ -28,17 +29,32 @@ interface JWTPayload {
 const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
 
 export const comingSoonPages: Set<Page> = COMING_SOON
-  ? new Set(['overview', 'traces', 'guardrails', 'pii-vault'])
+  ? new Set(['overview', 'traces', 'pii-vault'])
   : new Set()
 
+function isTokenValid(token: string | null) {
+  if (!token) {
+    return false
+  }
+
+  try {
+    const payload = jwtDecode<{ exp?: number }>(token)
+    return !payload.exp || payload.exp * 1000 > Date.now()
+  } catch {
+    return false
+  }
+}
+
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('admin_token'))
+  const [isAuthenticated, setIsAuthenticated] = useState(() => isTokenValid(localStorage.getItem('admin_token')))
   const [page, setPage] = useState<Page>('router')
   const [selectedAgent, setSelectedAgent] = useState<string>('all')
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
 
   const token = localStorage.getItem('admin_token')
-  const isSuperAdmin = token ? jwtDecode<JWTPayload>(token).is_super_admin : false
+  const isSuperAdmin = token && isTokenValid(token)
+    ? jwtDecode<JWTPayload>(token).is_super_admin
+    : false
 
   const { data: tenants } = useTenants()
   const tenant = activeTenantId
@@ -54,6 +70,12 @@ export default function App() {
     setIsAuthenticated(false)
   }
 
+  useEffect(() => {
+    const handleLogout = () => setIsAuthenticated(false)
+    window.addEventListener(ADMIN_LOGOUT_EVENT, handleLogout)
+    return () => window.removeEventListener(ADMIN_LOGOUT_EVENT, handleLogout)
+  }, [])
+
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />
   }
@@ -64,7 +86,7 @@ export default function App() {
   const pages: Record<Page, ReactNode> = {
     overview:    cs('overview',   'Overview',   'TOWER VIEW', <Overview selectedAgent={selectedAgent} />),
     traces:      cs('traces',     'Traces',     'FLIGHT LOG', <Traces selectedAgent={selectedAgent} />),
-    guardrails:  cs('guardrails', 'Guardrails', 'AIRSPACE',   <Guardrails selectedAgent={selectedAgent} />),
+    guardrails:  cs('guardrails', 'Guardrails', 'AIRSPACE',   <Guardrails selectedAgent={selectedAgent} tenantId={tenantId} />),
     'pii-vault': cs('pii-vault',  'PII Vault',  'CARGO',      <PiiVault selectedAgent={selectedAgent} />),
     router:      <Router selectedAgent={selectedAgent} tenantId={tenantId} />,
     agents:      <Agents tenantId={tenantId} agents={agents} />,

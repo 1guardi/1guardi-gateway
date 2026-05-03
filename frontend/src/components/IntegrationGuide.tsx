@@ -44,7 +44,7 @@ export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuide
   ]
 
   return (
-    <DialogContent className="sm:max-w-[1000px] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col">
+    <DialogContent className="sm:max-w-[1000px] w-[95vw] h-[90vh] overflow-hidden flex flex-col">
       <DialogHeader>
         <DialogTitle className="font-black tracking-tight flex items-center gap-2">
           <Shield className="w-5 h-5 text-primary" /> Integration Guide
@@ -54,7 +54,7 @@ export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuide
         </DialogDescription>
       </DialogHeader>
 
-      <ScrollArea className="flex-1 pr-4">
+      <ScrollArea className="flex-1 min-h-0 pr-4">
         <div className="space-y-6 py-4">
           <section>
             <h3 className="font-mono text-[10px] tracking-widest uppercase text-primary mb-3">Quick Start Commands</h3>

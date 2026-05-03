@@ -18,6 +18,7 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
 	"github.com/redis/go-redis/v9"
@@ -25,23 +26,25 @@ import (
 
 // Server holds dependencies for the admin API.
 type Server struct {
-	db        *gorm.DB
-	cfg       *config.Config
-	llmRouter *llmrouter.Router
-	redis     *redis.Client
-	modelsSvc providers.ModelProvider
+	db         *gorm.DB
+	cfg        *config.Config
+	llmRouter  *llmrouter.Router
+	redis      *redis.Client
+	modelsSvc  providers.ModelProvider
+	guardrails *guardrails.Engine
 }
 
 // NewRouter builds the internal admin API handler.
 // This port should never be exposed publicly — bind to 127.0.0.1 in production
 // or keep it cluster-internal in Kubernetes.
-func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc providers.ModelProvider) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Router, redis *redis.Client, modelsSvc providers.ModelProvider, gr *guardrails.Engine) http.Handler {
 	srv := &Server{
-		db:        database,
-		cfg:       cfg,
-		llmRouter: llmRouter,
-		redis:     redis,
-		modelsSvc: modelsSvc,
+		db:         database,
+		cfg:        cfg,
+		llmRouter:  llmRouter,
+		redis:      redis,
+		modelsSvc:  modelsSvc,
+		guardrails: gr,
 	}
 
 	mux := chi.NewRouter()
@@ -76,6 +79,8 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 
 				r.With(srv.RequirePermission("tenant.read")).Get("/rules", srv.handleListRules)
 				r.With(srv.RequirePermission("tenant.update")).Post("/rules", srv.handleCreateRule)
+				r.With(srv.RequirePermission("tenant.update")).Patch("/rules/{ruleID}", srv.handleUpdateRule)
+				r.With(srv.RequirePermission("tenant.update")).Delete("/rules/{ruleID}", srv.handleDeleteRule)
 
 				r.With(srv.RequirePermission("agents.read")).Get("/agents", srv.handleListAgents)
 				r.With(srv.RequirePermission("agents.manage")).Post("/agents", srv.handleCreateAgent)
@@ -388,6 +393,8 @@ func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.seedManagedRules(tenant.ID)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(tenant)
@@ -593,12 +600,256 @@ func (s *Server) handleRevokeKey(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+var validActions = map[string]bool{
+	"block": true, "log": true, "tag": true,
+	"rewrite": true, "shadow": true, "substitute": true,
+}
+
+// defaultManagedRules are the built-in guardrail rules seeded for every tenant.
+var defaultManagedRules = []struct {
+	name      string
+	priority  int
+	scope     string
+	action    string
+	managedID string
+	enabled   bool
+}{
+	{"Prompt Injection Detection", 1, "input",        "block", "prompt-injection",   true},
+	{"Secret Detection",           2, "input,output", "block", "secret-detection",   true},
+	{"PII Leakage — Output",       3, "output",       "log",   "pii-leakage-output", true},
+	{"Toxicity / Hate Speech",     4, "input,output", "block", "toxicity-basic",     true},
+}
+
+// seedManagedRules inserts the default managed guardrail rules for a tenant if
+// none exist yet. Safe to call on every list request — skips if already seeded.
+func (s *Server) seedManagedRules(tenantID uint) {
+	var count int64
+	s.db.Model(&db.GuardrailRule{}).
+		Where("tenant_id = ? AND managed = ?", tenantID, true).
+		Count(&count)
+	if count > 0 {
+		return
+	}
+	for _, r := range defaultManagedRules {
+		cond := fmt.Sprintf(`{"type":"managed","rule_id":%q}`, r.managedID)
+		rule := db.GuardrailRule{
+			TenantID:  tenantID,
+			Name:      r.name,
+			Priority:  r.priority,
+			Scope:     r.scope,
+			Direction: "both",
+			Condition: cond,
+			Action:    r.action,
+			Mode:      "parallel",
+			Managed:   true,
+			ManagedID: r.managedID,
+			Version:   "1.0",
+			Enabled:   r.enabled,
+		}
+		s.db.Create(&rule) //nolint:errcheck — best-effort seed
+	}
+	if s.guardrails != nil {
+		s.guardrails.InvalidateCache(context.Background(), tenantID) //nolint:errcheck
+	}
+}
+
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	s.seedManagedRules(uint(tenantID))
+	query := s.db.Where("tenant_id = ?", tenantID).Order("priority asc")
+	if agentIDStr := r.URL.Query().Get("agent_id"); agentIDStr != "" {
+		agentID, err := strconv.Atoi(agentIDStr)
+		if err != nil {
+			http.Error(w, "invalid agent_id", http.StatusBadRequest)
+			return
+		}
+		query = query.Where("agent_id = ? OR agent_id IS NULL", agentID)
+	}
+	var rules []db.GuardrailRule
+	if err := query.Find(&rules).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rules) //nolint:errcheck
 }
 
 func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+
+	var req struct {
+		Name      string          `json:"name"`
+		Priority  int             `json:"priority"`
+		Scope     []string        `json:"scope"`
+		Direction string          `json:"direction"`
+		Condition json.RawMessage `json:"condition"`
+		Action    string          `json:"action"`
+		Mode      string          `json:"mode"`
+		Managed   bool            `json:"managed"`
+		ManagedID string          `json:"managed_id"`
+		Version   string          `json:"version"`
+		Enabled   *bool           `json:"enabled"`
+		AgentID   *uint           `json:"agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if !validActions[req.Action] {
+		http.Error(w, "invalid action", http.StatusBadRequest)
+		return
+	}
+
+	direction := req.Direction
+	if direction == "" {
+		direction = "both"
+	}
+	mode := req.Mode
+	if mode == "" {
+		mode = "parallel"
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	priority := req.Priority
+	if priority == 0 {
+		priority = 100
+	}
+
+	condJSON := ""
+	if len(req.Condition) > 0 {
+		condJSON = string(req.Condition)
+	}
+
+	rule := db.GuardrailRule{
+		TenantID:  uint(tenantID),
+		AgentID:   req.AgentID,
+		Name:      req.Name,
+		Priority:  priority,
+		Scope:     strings.Join(req.Scope, ","),
+		Direction: direction,
+		Condition: condJSON,
+		Action:    req.Action,
+		Mode:      mode,
+		Managed:   req.Managed,
+		ManagedID: req.ManagedID,
+		Version:   req.Version,
+		Enabled:   enabled,
+	}
+	if err := s.db.Create(&rule).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if s.guardrails != nil {
+		s.guardrails.InvalidateCache(r.Context(), uint(tenantID)) //nolint:errcheck
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(rule) //nolint:errcheck
+}
+
+func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	ruleID, _ := strconv.Atoi(chi.URLParam(r, "ruleID"))
+
+	var rule db.GuardrailRule
+	if err := s.db.First(&rule, ruleID).Error; err != nil {
+		http.Error(w, "rule not found", http.StatusNotFound)
+		return
+	}
+	if rule.TenantID != uint(tenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Name      *string         `json:"name"`
+		Priority  *int            `json:"priority"`
+		Scope     []string        `json:"scope"`
+		Direction *string         `json:"direction"`
+		Condition json.RawMessage `json:"condition"`
+		Action    *string         `json:"action"`
+		Mode      *string         `json:"mode"`
+		Enabled   *bool           `json:"enabled"`
+		AgentID   *uint           `json:"agent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	updates := map[string]any{}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Priority != nil {
+		updates["priority"] = *req.Priority
+	}
+	if len(req.Scope) > 0 {
+		updates["scope"] = strings.Join(req.Scope, ",")
+	}
+	if req.Direction != nil {
+		updates["direction"] = *req.Direction
+	}
+	if len(req.Condition) > 0 {
+		updates["condition"] = string(req.Condition)
+	}
+	if req.Action != nil {
+		if !validActions[*req.Action] {
+			http.Error(w, "invalid action", http.StatusBadRequest)
+			return
+		}
+		updates["action"] = *req.Action
+	}
+	if req.Mode != nil {
+		updates["mode"] = *req.Mode
+	}
+	if req.Enabled != nil {
+		updates["enabled"] = *req.Enabled
+	}
+	if req.AgentID != nil {
+		updates["agent_id"] = req.AgentID
+	}
+
+	if len(updates) > 0 {
+		if err := s.db.Model(&rule).Updates(updates).Error; err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if s.guardrails != nil {
+		s.guardrails.InvalidateCache(r.Context(), uint(tenantID)) //nolint:errcheck
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rule) //nolint:errcheck
+}
+
+func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
+	tenantID, _ := strconv.Atoi(chi.URLParam(r, "tenantID"))
+	ruleID, _ := strconv.Atoi(chi.URLParam(r, "ruleID"))
+
+	var rule db.GuardrailRule
+	if err := s.db.First(&rule, ruleID).Error; err != nil {
+		http.Error(w, "rule not found", http.StatusNotFound)
+		return
+	}
+	if rule.TenantID != uint(tenantID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := s.db.Delete(&rule).Error; err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if s.guardrails != nil {
+		s.guardrails.InvalidateCache(r.Context(), uint(tenantID)) //nolint:errcheck
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListUpstreams(w http.ResponseWriter, r *http.Request) {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Bot } from 'lucide-react'
+import { Plus, Bot, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,9 +15,10 @@ import type { AgentSummary } from '../api/agents.ts'
 interface AgentsProps {
   tenantId: string | null
   agents: AgentSummary[]
+  onViewTraces?: (agentId: string) => void
 }
 
-export default function Agents({ tenantId, agents }: AgentsProps) {
+export default function Agents({ tenantId, agents, onViewTraces }: AgentsProps) {
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -118,7 +119,7 @@ export default function Agents({ tenantId, agents }: AgentsProps) {
             <Table>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
-                  {['NAME', 'DESCRIPTION', 'ID', 'REGISTERED'].map((h) => (
+                  {['NAME', 'DESCRIPTION', 'ID', 'REGISTERED', ''].map((h) => (
                     <TableHead key={h} className="font-mono text-[10px] tracking-widest text-muted-foreground/50">{h}</TableHead>
                   ))}
                 </TableRow>
@@ -144,6 +145,19 @@ export default function Agents({ tenantId, agents }: AgentsProps) {
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {new Date(agent.CreatedAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {onViewTraces && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="font-mono text-[10px] tracking-widest gap-1.5 h-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => onViewTraces(String(agent.ID))}
+                        >
+                          <Activity className="w-3 h-3" />
+                          TRACES
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

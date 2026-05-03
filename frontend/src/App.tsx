@@ -29,7 +29,7 @@ interface JWTPayload {
 const COMING_SOON = import.meta.env.VITE_COMING_SOON !== 'false'
 
 export const comingSoonPages: Set<Page> = COMING_SOON
-  ? new Set(['overview', 'traces', 'pii-vault'])
+  ? new Set(['overview', 'pii-vault'])
   : new Set()
 
 function isTokenValid(token: string | null) {
@@ -85,11 +85,11 @@ export default function App() {
 
   const pages: Record<Page, ReactNode> = {
     overview:    cs('overview',   'Overview',   'TOWER VIEW', <Overview selectedAgent={selectedAgent} />),
-    traces:      cs('traces',     'Traces',     'FLIGHT LOG', <Traces selectedAgent={selectedAgent} />),
+    traces:      cs('traces',     'Traces',     'FLIGHT LOG', <Traces selectedAgent={selectedAgent} tenantId={tenantId} />),
     guardrails:  cs('guardrails', 'Guardrails', 'AIRSPACE',   <Guardrails selectedAgent={selectedAgent} tenantId={tenantId} />),
     'pii-vault': cs('pii-vault',  'PII Vault',  'CARGO',      <PiiVault selectedAgent={selectedAgent} />),
     router:      <Router selectedAgent={selectedAgent} tenantId={tenantId} />,
-    agents:      <Agents tenantId={tenantId} agents={agents} />,
+    agents:      <Agents tenantId={tenantId} agents={agents} onViewTraces={(id) => { setSelectedAgent(id); setPage('traces') }} />,
     'api-keys':  <APIKeys selectedAgent={selectedAgent} tenantId={tenantId} agents={agents} />,
     members:     <Members tenantId={tenantId} />,
     upstreams:   <Upstreams tenantId={tenantId} />,

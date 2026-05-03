@@ -265,3 +265,4 @@ volumes:
   postgres_data:
   redis_data:
   jaeger_data:
+  clickhouse_data:

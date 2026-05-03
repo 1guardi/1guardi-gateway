@@ -13,6 +13,8 @@ interface IntegrationGuideProps {
 
 export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuideProps) {
   const [copied, setCopied] = useState<string | null>(null)
+  const baseUrl = import.meta.env.VITE_GATEWAY_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080')
+  const proxyUrl = `${baseUrl}/v1`
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text)
@@ -24,12 +26,12 @@ export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuide
     {
       id: 'env',
       label: 'Set Environment Variable',
-      cmd: 'export OPENAI_BASE_URL="http://localhost:8080/v1"',
+      cmd: `export OPENAI_BASE_URL="${proxyUrl}"`,
     },
     {
       id: 'test',
       label: 'Test Connection',
-      cmd: 'curl http://localhost:8080/v1/models -H "Authorization: Bearer sk_your_key"',
+      cmd: `curl ${proxyUrl}/models -H "Authorization: Bearer sk_your_key"`,
     },
     {
       id: 'install-py',
@@ -86,7 +88,7 @@ export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuide
             <div className="bg-muted p-3 rounded border font-mono text-xs space-y-2">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Proxy URL</span>
-                <span className="text-foreground">http://localhost:8080/v1</span>
+                <span className="text-foreground">{proxyUrl}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Auth Method</span>
@@ -140,7 +142,7 @@ export default function IntegrationGuide({ tenantId, onClose }: IntegrationGuide
                     onClick={() => copyToClipboard(`from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="${proxyUrl}",
     api_key="sk_your_key_here"
 )
 
@@ -159,7 +161,7 @@ response = client.chat.completions.create(
 {`from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="${proxyUrl}",
     api_key="sk_your_key_here"
 )
 
@@ -183,7 +185,7 @@ response = client.chat.completions.create(
                     onClick={() => copyToClipboard(`import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
+  baseURL: '${proxyUrl}',
   apiKey: 'sk_your_key_here',
 });
 
@@ -203,7 +205,7 @@ const response = await openai.chat.completions.create({
 {`import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
+  baseURL: '${proxyUrl}',
   apiKey: 'sk_your_key_here',
 });
 
@@ -225,7 +227,7 @@ const response = await openai.chat.completions.create({
                     variant="ghost"
                     size="icon"
                     className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 hover:bg-background"
-                    onClick={() => copyToClipboard(`curl http://localhost:8080/v1/chat/completions \\
+                    onClick={() => copyToClipboard(`curl ${proxyUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer sk_your_key_here" \\
   -H "X-Agent-Id: my-agent" \\
@@ -237,7 +239,7 @@ const response = await openai.chat.completions.create({
                     {copied === 'code-curl' ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                   </Button>
                   <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
-{`curl http://localhost:8080/v1/chat/completions \\
+{`curl ${proxyUrl}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer sk_your_key_here" \\
   -H "X-Agent-Id: my-agent" \\
@@ -254,7 +256,7 @@ const response = await openai.chat.completions.create({
                     variant="ghost"
                     size="icon"
                     className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity bg-background/50 hover:bg-background"
-                    onClick={() => copyToClipboard(`export ANTHROPIC_BASE_URL="http://localhost:8080/v1"
+                    onClick={() => copyToClipboard(`export ANTHROPIC_BASE_URL="${proxyUrl}"
 export ANTHROPIC_API_KEY="sk_your_gateway_key"
 claude`, 'code-claude')}
                   >
@@ -262,7 +264,7 @@ claude`, 'code-claude')}
                   </Button>
                   <pre className="bg-muted/50 p-4 rounded-b border border-t-0 font-mono text-[11px] leading-relaxed overflow-x-auto">
 {`# 1. Route Claude Code CLI through the gateway
-export ANTHROPIC_BASE_URL="http://localhost:8080/v1"
+export ANTHROPIC_BASE_URL="${proxyUrl}"
 
 # 2. Use your Gateway API Key as the Anthropic Key
 export ANTHROPIC_API_KEY="sk_your_gateway_key"

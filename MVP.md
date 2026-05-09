@@ -440,6 +440,28 @@ To support environments where individual users act as agents or require their ow
 
 ---
 
+### 7. Human-in-the-Loop (HITL) & Multi-Factor Authentication
+
+To ensure that critical actions and administrative access are performed by verified humans, the gateway integrates modern authentication and verification challenges.
+
+**Verification Methods:**
+- **Re-Captcha (v3):** Risk-based analysis to distinguish humans from bots during login and high-risk administrative operations.
+- **Multi-Factor Authentication (MFA):**
+    - **TOTP (Time-based One-Time Password):** Support for authenticator apps (Google Authenticator, Microsoft Authenticator).
+    - **Email OTP:** Fallback or primary second factor via secure one-time codes sent to registered email addresses.
+
+**Enforcement Points:**
+1. **Admin Portal Login:** Mandatory Re-Captcha + MFA (if enabled) for all administrative users.
+2. **Sensitive API Operations:** Optional MFA challenge for actions like deleting tenants, rotating root keys, or modifying global guardrail policies.
+3. **HITL Tool Approvals (Agent-facing):** When an agent requests a sensitive tool call (e.g., `execute_payment`), the gateway can intercept and require a human approval verified via MFA before proceeding.
+
+**Configuration:**
+- Admins can enforce "MFA Required" at the tenant level.
+- Grace periods for MFA setup (e.g., "Setup required within 24 hours").
+- Support for "Remember this device" for a configurable duration (default: 30 days).
+
+---
+
 ## Multi-Tenancy & Deployment
 
 **Tenant isolation model:**
@@ -492,6 +514,7 @@ Physical isolation options:
 | Document security — LLM inspector | Semantic payload analysis; verdict caching |
 | Multi-tenancy | Logical isolation; shared infrastructure |
 | Self-hosted packaging | Docker Compose at minimum |
+| Human-in-the-Loop (HITL) Auth | Re-Captcha + MFA (TOTP/Email) for admin & sensitive tool calls |
 
 ### Deferred to v1.1 / v2
 

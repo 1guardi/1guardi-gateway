@@ -21,6 +21,16 @@ type Config struct {
 	Postgres   PostgresConfig
 	ClickHouse ClickHouseConfig
 	Upstreams  []UpstreamConfig
+	MLRunner   MLRunnerConfig
+}
+
+// MLRunnerConfig holds settings for the Python ML inference sidecar.
+type MLRunnerConfig struct {
+	BaseURL   string        // MLRUNNER_BASE_URL
+	Threshold float64       // MLRUNNER_THRESHOLD — min score to flag as injection
+	TimeoutMS int           // MLRUNNER_TIMEOUT_MS
+	CacheTTL  time.Duration // MLRUNNER_CACHE_TTL_SEC
+	Enabled   bool          // MLRUNNER_ENABLED
 }
 
 type ClickHouseConfig struct {
@@ -96,6 +106,13 @@ func Load() (*Config, error) {
 			Database: env("CLICKHOUSE_DB", "otel"),
 		},
 		Upstreams: loadUpstreams(),
+		MLRunner: MLRunnerConfig{
+			BaseURL:   env("MLRUNNER_BASE_URL", "http://localhost:8082"),
+			Threshold: floatEnv("MLRUNNER_THRESHOLD", 0.85),
+			TimeoutMS: intEnv("MLRUNNER_TIMEOUT_MS", 200),
+			CacheTTL:  time.Duration(intEnv("MLRUNNER_CACHE_TTL_SEC", 86400)) * time.Second,
+			Enabled:   boolEnv("MLRUNNER_ENABLED", true),
+		},
 	}, nil
 }
 
@@ -142,6 +159,24 @@ func intEnv(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return fallback
+}
+
+func floatEnv(key string, fallback float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	if v := os.Getenv(key); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return fallback

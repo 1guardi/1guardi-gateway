@@ -18,6 +18,7 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/secllm"
 )
 
 // Server holds shared dependencies for the proxy hot path.
@@ -28,16 +29,18 @@ type Server struct {
 	redis      *redis.Client
 	authTTL    time.Duration
 	guardrails *guardrails.Engine
+	secllm     *secllm.Detector
 }
 
 // NewRouter builds the OpenAI-compatible proxy HTTP handler.
-func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, r *llmrouter.Router, grEngine *guardrails.Engine) http.Handler {
+func NewRouter(cfg *config.Config, database *gorm.DB, redisCache *redis.Client, r *llmrouter.Router, grEngine *guardrails.Engine, secDet *secllm.Detector) http.Handler {
 	srv := &Server{
 		router:     r,
 		db:         database,
 		redis:      redisCache,
 		authTTL:    cfg.Auth.CacheTTL,
 		guardrails: grEngine,
+		secllm:     secDet,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				MaxIdleConnsPerHost: 20,

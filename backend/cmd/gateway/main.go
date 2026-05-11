@@ -19,9 +19,11 @@ import (
 	"github.com/chaitanyabankanhal/ai-gateway/internal/clickhouse"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/inference"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/providers"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/proxy"
 	llmrouter "github.com/chaitanyabankanhal/ai-gateway/internal/router"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/secllm"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/telemetry"
 )
 
@@ -115,6 +117,20 @@ func main() {
 	// Shared guardrails engine — used by both the proxy hot path and admin CRUD.
 	grEngine := guardrails.NewEngine(database, redisCache)
 
+	// ML inference sidecar client + security detector (nil when disabled).
+	var secDet *secllm.Detector
+	if cfg.MLRunner.Enabled {
+		inferenceClient := inference.NewClient(
+			cfg.MLRunner.BaseURL,
+			cfg.MLRunner.TimeoutMS,
+			cfg.MLRunner.CacheTTL,
+			redisCache,
+		)
+		secDet = secllm.NewDetector(inferenceClient, cfg.MLRunner.Threshold)
+		slog.Info("secllm detector enabled", "base_url", cfg.MLRunner.BaseURL, "threshold", cfg.MLRunner.Threshold)
+		grEngine.WithDetector(secDet)
+	}
+
 	// ClickHouse client for analytics queries (nil-safe: admin handlers zero-fill when unavailable).
 	chClient, err := clickhouse.NewClient(
 		cfg.ClickHouse.Addr,
@@ -130,7 +146,7 @@ func main() {
 	// Two HTTP servers: proxy (hot path) and admin (management)
 	proxySrv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.ProxyPort),
-		Handler: proxy.NewRouter(cfg, database, redisCache, router, grEngine),
+		Handler: proxy.NewRouter(cfg, database, redisCache, router, grEngine, secDet),
 		// Long write timeout to accommodate streaming LLM responses
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 300 * time.Second,

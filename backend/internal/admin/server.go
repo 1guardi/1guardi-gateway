@@ -630,6 +630,7 @@ var defaultManagedRules = []struct {
 	{"Secret Detection", 2, "input,output", "block", "secret-detection", true},
 	{"PII Leakage — Output", 3, "output", "log", "pii-leakage-output", true},
 	{"Toxicity / Hate Speech", 4, "input,output", "block", "toxicity-basic", true},
+	{"ML Injection Detection", 5, "input", "block", "ml-injection-detection", false},
 }
 
 // seedManagedRules inserts the default managed guardrail rules for a tenant if
@@ -643,7 +644,12 @@ func (s *Server) seedManagedRules(tenantID uint) {
 		return
 	}
 	for _, r := range defaultManagedRules {
-		cond := fmt.Sprintf(`{"type":"managed","rule_id":%q}`, r.managedID)
+		var cond string
+		if r.managedID == "ml-injection-detection" {
+			cond = `{"type":"mlrunner"}`
+		} else {
+			cond = fmt.Sprintf(`{"type":"managed","rule_id":%q}`, r.managedID)
+		}
 		rule := db.GuardrailRule{
 			TenantID:  tenantID,
 			Name:      r.name,

@@ -19,15 +19,27 @@ const (
 	cacheTTL = 30 * time.Second
 )
 
+// InjectionDetector is satisfied by secllm.Detector and any test stub.
+type InjectionDetector interface {
+	IsInjection(ctx context.Context, text string) (bool, float64, error)
+}
+
 // Engine evaluates guardrail rules against request/response content.
 type Engine struct {
-	db    *gorm.DB
-	redis *redis.Client
+	db       *gorm.DB
+	redis    *redis.Client
+	detector InjectionDetector // optional; non-nil when mlrunner enabled
 }
 
 // NewEngine creates an Engine. redis may be nil (cache disabled).
 func NewEngine(database *gorm.DB, redisClient *redis.Client) *Engine {
 	return &Engine{db: database, redis: redisClient}
+}
+
+// WithDetector attaches an ML injection detector for "mlrunner" condition rules.
+func (e *Engine) WithDetector(d InjectionDetector) *Engine {
+	e.detector = d
+	return e
 }
 
 func (e *Engine) cacheKey(tenantID uint) string {
@@ -91,7 +103,24 @@ func (e *Engine) Evaluate(ctx context.Context, evalCtx EvalContext) (*Decision, 
 		if !ruleAppliesToContext(rule, evalCtx) {
 			continue
 		}
-		matched, reason := evalCondition(rule.Condition, evalCtx.Content)
+
+		var matched bool
+		var reason string
+
+		// "mlrunner" conditions require network I/O and context; handle separately.
+		var condType struct{ Type string `json:"type"` }
+		if json.Unmarshal([]byte(rule.Condition), &condType) == nil && condType.Type == "mlrunner" {
+			if e.detector != nil {
+				injection, score, err := e.detector.IsInjection(ctx, evalCtx.Content)
+				if err == nil && injection {
+					matched = true
+					reason = fmt.Sprintf("ml injection score %.2f", score)
+				}
+			}
+		} else {
+			matched, reason = evalCondition(rule.Condition, evalCtx.Content)
+		}
+
 		if !matched {
 			continue
 		}

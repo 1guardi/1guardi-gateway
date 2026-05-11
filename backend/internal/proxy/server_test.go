@@ -158,7 +158,7 @@ func TestNewRouter(t *testing.T) {
 	cfg := &config.Config{}
 
 	// The NewRouter should create a fully wired chi router.
-	handler := NewRouter(cfg, database, nil, nil, nil)
+	handler := NewRouter(cfg, database, nil, nil, nil, nil)
 
 	// Because of the Authenticate middleware, any request without a valid token
 	// should be blocked with 401 Unauthorized.

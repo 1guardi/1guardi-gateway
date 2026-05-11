@@ -31,6 +31,29 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── ML Runner (inference sidecar) ────────────────────────────────────────────
+  mlrunner:
+    build:
+      context: ../services/mlrunner
+    expose:
+      - "8082"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    restart: always
+    logging: *json-logging
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8082/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
   # ── Gateway ───────────────────────────────────────────────────────────────
   gateway:
     build:
@@ -54,11 +77,14 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-649NB7B/83I=}
       JWT_SECRET: ${JWT_SECRET}
+      MLRUNNER_BASE_URL: http://mlrunner:8082
       UPSTREAM_0_KEY_ID: ${UPSTREAM_0_KEY_ID}
       UPSTREAM_0_MODEL: ${UPSTREAM_0_MODEL:-gpt-5.4}
       UPSTREAM_0_BASE_URL: ${UPSTREAM_0_BASE_URL:-https://api.openai.com}
       UPSTREAM_0_API_KEY: ${UPSTREAM_0_API_KEY}
     depends_on:
+      mlrunner:
+        condition: service_healthy
       clickhouse:
         condition: service_healthy
       postgres:

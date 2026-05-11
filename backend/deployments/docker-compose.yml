@@ -1,6 +1,37 @@
 name: ai-gateway
 
 services:
+  # ── ML Runner (inference sidecar) ─────────────────────────────────────────────
+  mlrunner:
+    profiles: ["backend", "infra"]
+    build:
+      context: ../services/mlrunner
+    ports:
+      - "8082:8082"
+    environment:
+      # Mount a different YAML to swap models without rebuilding.
+      ANALYZERS_CONFIG: /config/analyzers.yml
+    volumes:
+      - ../services/mlrunner/analyzers.yml:/config/analyzers.yml:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8082/health'')"',
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
 
   # ── Gateway ──────────────────────────────────────────────────────────────────
   gateway:
@@ -9,8 +40,8 @@ services:
       context: ..
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"   # OpenAI-compatible proxy — expose to clients
-      - "8081:8081"   # Admin API — keep internal in production
+      - "8080:8080" # OpenAI-compatible proxy — expose to clients
+      - "8081:8081" # Admin API — keep internal in production
     env_file:
       - ../.env
     environment:
@@ -23,6 +54,7 @@ services:
       CLICKHOUSE_DB: otel
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       JWT_SECRET: ${JWT_SECRET}
+      MLRUNNER_BASE_URL: http://mlrunner:8082
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,13 +62,15 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      mlrunner:
+        condition: service_healthy
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
     restart: unless-stopped
     healthcheck:
@@ -57,14 +91,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql
     ports:
-      - "6432:5432"   # exposed for local tooling (psql, Postico, etc.)
+      - "6432:5432" # exposed for local tooling (psql, Postico, etc.)
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: "0.50"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
@@ -80,14 +114,14 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"   # exposed for local tooling
+      - "6379:6379" # exposed for local tooling
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: "0.50"
           memory: 256M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 128M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -104,20 +138,24 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: otel
     ports:
-      - "8123:8123"   # HTTP interface — admin API queries here
-      - "9001:9000"   # Native protocol — otelcol writes here
+      - "8123:8123" # HTTP interface — admin API queries here
+      - "9001:9000" # Native protocol — otelcol writes here
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 2G
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 512M
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user default --password otel --query 'SELECT 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user default --password otel --query 'SELECT 1'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -131,12 +169,12 @@ services:
     volumes:
       - ./otel-collector.yaml:/etc/otel/config.yaml:ro
     ports:
-      - "4317:4317"   # OTLP gRPC — gateway exports here
-      - "4318:4318"   # OTLP HTTP
+      - "4317:4317" # OTLP gRPC — gateway exports here
+      - "4318:4318" # OTLP HTTP
     deploy:
       resources:
         limits:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     depends_on:
       jaeger:
@@ -162,7 +200,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.50'
+          cpus: "0.50"
           memory: 512M
     restart: unless-stopped
 

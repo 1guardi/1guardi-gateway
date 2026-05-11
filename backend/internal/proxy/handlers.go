@@ -195,6 +195,40 @@ func extractTextFromResponse(provider string, body []byte) string {
 	return ""
 }
 
+// extractToolMessages concatenates content from tool/function role messages for
+// data poisoning detection — RAG context and tool outputs arrive via these roles.
+func extractToolMessages(raw json.RawMessage) string {
+	var msgs []struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &msgs); err != nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, m := range msgs {
+		if m.Role != "tool" && m.Role != "function" {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(m.Content, &s); err == nil {
+			sb.WriteString(s)
+			sb.WriteByte('\n')
+			continue
+		}
+		var blocks []struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(m.Content, &blocks); err == nil {
+			for _, b := range blocks {
+				sb.WriteString(b.Text)
+				sb.WriteByte('\n')
+			}
+		}
+	}
+	return sb.String()
+}
+
 // emitGuardrailEvents records fired guardrail rules as events on the given span.
 func emitGuardrailEvents(span trace.Span, fired []guardrails.FireEvent) {
 	for _, ev := range fired {
@@ -299,7 +333,43 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Pick upstream endpoint.
+	// 3a. Semantic injection check on full input (secllm).
+	if s.secllm != nil && inputContent != "" {
+		secCtx, secSpan := tracer.Start(baseCtx, "secllm.classify",
+			trace.WithAttributes(attribute.String("secllm.scope", "input")))
+		secStart := time.Now()
+		injection, score, secErr := s.secllm.IsInjection(secCtx, inputContent)
+		secSpan.SetAttributes(
+			attribute.Float64("secllm.score", score),
+			attribute.Int("secllm.latency_ms", int(time.Since(secStart).Milliseconds())),
+		)
+		secSpan.End()
+		if secErr == nil && injection {
+			writeError(w, http.StatusForbidden, "request blocked by semantic threat analysis", "policy_error")
+			return
+		}
+	}
+
+	// 3b. Data poisoning check on tool/function message content.
+	if s.secllm != nil {
+		if toolContent := extractToolMessages(fields["messages"]); toolContent != "" {
+			secCtx, secSpan := tracer.Start(baseCtx, "secllm.classify",
+				trace.WithAttributes(attribute.String("secllm.scope", "tool")))
+			secStart := time.Now()
+			injection, score, secErr := s.secllm.IsInjection(secCtx, toolContent)
+			secSpan.SetAttributes(
+				attribute.Float64("secllm.score", score),
+				attribute.Int("secllm.latency_ms", int(time.Since(secStart).Milliseconds())),
+			)
+			secSpan.End()
+			if secErr == nil && injection {
+				writeError(w, http.StatusForbidden, "request blocked: data poisoning detected in tool output", "policy_error")
+				return
+			}
+		}
+	}
+
+	// 4. Pick upstream endpoint.
 	var tenantID uint
 	fmt.Sscanf(tc.TenantID, "%d", &tenantID)
 

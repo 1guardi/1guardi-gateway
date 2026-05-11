@@ -23,6 +23,7 @@ interface UIRule {
   action: string
   mode: string
   managed: boolean
+  managedId: string
   enabled: boolean
   fires24h: number
   agentId?: string
@@ -37,6 +38,7 @@ function toUIRule(r: GuardrailRuleResponse): UIRule {
     action: r.action,
     mode: r.mode,
     managed: r.managed,
+    managedId: r.managed_id ?? '',
     enabled: r.enabled,
     fires24h: r.fires24h ?? 0,
     agentId: r.agent_id != null ? String(r.agent_id) : undefined,
@@ -144,6 +146,14 @@ function RuleDetail({ rule, tenantId, readOnly, onToggle, onClose }: {
             </div>
           ))}
         </div>
+        {rule.managedId === 'ml-injection-detection' && (
+          <div className="rounded border border-warning/40 bg-warning/5 px-3 py-2 space-y-0.5">
+            <p className="font-mono text-[9px] font-bold tracking-widest text-warning">LATENCY NOTE</p>
+            <p className="font-mono text-[10px] text-muted-foreground leading-relaxed">
+              Adds ~200ms per request. More accurate than regex — catches sophisticated injection attacks patterns miss.
+            </p>
+          </div>
+        )}
         {readOnly ? (
           <p className="font-mono text-[10px] text-muted-foreground/50 text-center pt-1">
             switch to global view to edit

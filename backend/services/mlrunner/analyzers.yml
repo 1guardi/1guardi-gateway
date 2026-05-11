@@ -1,0 +1,24 @@
+analyzers:
+  prompt-injection:
+    model: "patronus-studio/wolf-defender-prompt-injection"
+    task: "text-classification"
+    max_length: 512
+    device: -1              # -1 = CPU, 0 = first GPU
+    trust_remote_code: true
+    use_fast: false         # tokenizer_config.json contains internal class 'TokenizersBackend';
+                            # use_fast=false bypasses the Rust tokenizer entirely
+
+  # Add future analyzers here — no code changes required.
+  # Example (Epic 3 PII detection):
+  # ner-pii:
+  #   model: "Jean-Baptiste/roberta-large-ner-english"
+  #   task: "ner"
+  #   max_length: 512
+  #   device: -1
+  #
+  # Example (toxicity):
+  # toxicity:
+  #   model: "unitary/toxic-bert"
+  #   task: "text-classification"
+  #   max_length: 512
+  #   device: -1

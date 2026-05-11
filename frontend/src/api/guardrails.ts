@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from './client'
 
 export interface GuardrailCondition {
-  type: 'regex' | 'keyword' | 'managed'
+  type: 'regex' | 'keyword' | 'managed' | 'mlrunner'
   patterns?: string[]
   match_all?: boolean
   rule_id?: string

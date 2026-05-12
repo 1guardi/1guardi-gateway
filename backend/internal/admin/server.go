@@ -636,14 +636,21 @@ var defaultManagedRules = []struct {
 // seedManagedRules inserts the default managed guardrail rules for a tenant if
 // none exist yet. Safe to call on every list request — skips if already seeded.
 func (s *Server) seedManagedRules(tenantID uint) {
-	var count int64
+	// Fetch existing managed_ids so we can skip already-seeded rules without
+	// blocking new entries added to defaultManagedRules after first seed.
+	var existing []string
 	s.db.Model(&db.GuardrailRule{}).
 		Where("tenant_id = ? AND managed = ?", tenantID, true).
-		Count(&count)
-	if count > 0 {
-		return
+		Pluck("managed_id", &existing)
+	seeded := make(map[string]bool, len(existing))
+	for _, id := range existing {
+		seeded[id] = true
 	}
+
 	for _, r := range defaultManagedRules {
+		if seeded[r.managedID] {
+			continue
+		}
 		var cond string
 		if r.managedID == "ml-injection-detection" {
 			cond = `{"type":"mlrunner"}`

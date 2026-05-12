@@ -339,10 +339,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			trace.WithAttributes(attribute.String("secllm.scope", "input")))
 		secStart := time.Now()
 		injection, score, secErr := s.secllm.IsInjection(secCtx, inputContent)
-		secSpan.SetAttributes(
+		attrs := []attribute.KeyValue{
 			attribute.Float64("secllm.score", score),
 			attribute.Int("secllm.latency_ms", int(time.Since(secStart).Milliseconds())),
-		)
+			attribute.Bool("secllm.error", secErr != nil),
+		}
+		if secErr != nil {
+			attrs = append(attrs, attribute.String("secllm.error_msg", secErr.Error()))
+		}
+		secSpan.SetAttributes(attrs...)
 		secSpan.End()
 		if secErr == nil && injection {
 			writeError(w, http.StatusForbidden, "request blocked by semantic threat analysis", "policy_error")
@@ -357,10 +362,15 @@ func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				trace.WithAttributes(attribute.String("secllm.scope", "tool")))
 			secStart := time.Now()
 			injection, score, secErr := s.secllm.IsInjection(secCtx, toolContent)
-			secSpan.SetAttributes(
+			attrs := []attribute.KeyValue{
 				attribute.Float64("secllm.score", score),
 				attribute.Int("secllm.latency_ms", int(time.Since(secStart).Milliseconds())),
-			)
+				attribute.Bool("secllm.error", secErr != nil),
+			}
+			if secErr != nil {
+				attrs = append(attrs, attribute.String("secllm.error_msg", secErr.Error()))
+			}
+			secSpan.SetAttributes(attrs...)
 			secSpan.End()
 			if secErr == nil && injection {
 				writeError(w, http.StatusForbidden, "request blocked: data poisoning detected in tool output", "policy_error")

@@ -1,6 +1,7 @@
-.PHONY: test test-verbose test-cover lint build infra
+.PHONY: test test-verbose test-cover lint build infra docs-dev docs-build docs-preview
 
 BACKEND_DIR := ./backend
+DOCS_DIR   := ./docs
 
 test:
 	cd $(BACKEND_DIR) && go test -v ./... -race -count=1
@@ -17,3 +18,12 @@ build:
 
 infra:
 	cd $(BACKEND_DIR) && $(MAKE) infra
+
+docs-dev:
+	cd $(DOCS_DIR) && pnpm dev
+
+docs-build:
+	cd $(DOCS_DIR) && pnpm build
+
+docs-preview:
+	cd $(DOCS_DIR) && pnpm preview

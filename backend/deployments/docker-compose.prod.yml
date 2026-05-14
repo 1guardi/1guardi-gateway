@@ -7,7 +7,6 @@ x-logging: &json-logging
     max-file: "5"
 
 services:
-
   # ── Frontend (builds React app + serves as nginx entry point) ───────────
   # nginx.conf is mounted at runtime so it can proxy /v1/ and /api/ to gateway
   # without rebuilding the image. Static files are baked into the image.
@@ -22,10 +21,16 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      docs:
+        condition: service_healthy
     restart: always
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -40,15 +45,19 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
+          cpus: "2.0"
           memory: 2G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 1G
     restart: always
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8082/health')\""]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8082/health'')"',
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -60,8 +69,8 @@ services:
       context: ..
       dockerfile: Dockerfile
     expose:
-      - "8080"   # OpenAI-compatible proxy — internal only, nginx proxies it
-      - "8081"   # Admin API — internal only, nginx proxies /api/
+      - "8080" # OpenAI-compatible proxy — internal only, nginx proxies it
+      - "8081" # Admin API — internal only, nginx proxies /api/
     environment:
       ENV: prod
       PROXY_PORT: "8080"
@@ -96,10 +105,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
+          cpus: "2.0"
           memory: 1G
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
     restart: always
     logging: *json-logging
@@ -124,15 +133,19 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 1G
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 256M
     restart: always
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gateway} -d ${POSTGRES_DB:-gateway}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-gateway} -d ${POSTGRES_DB:-gateway}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -148,10 +161,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
         reservations:
-          cpus: '0.1'
+          cpus: "0.1"
           memory: 128M
     restart: always
     logging: *json-logging
@@ -176,15 +189,19 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 2G
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 512M
     restart: always
     logging: *json-logging
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user ${CLICKHOUSE_USER:-default} --password ${CLICKHOUSE_PASSWORD:-otel} --query 'SELECT 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "clickhouse-client --user ${CLICKHOUSE_USER:-default} --password ${CLICKHOUSE_PASSWORD:-otel} --query 'SELECT 1'",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -256,7 +273,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
     restart: always
     logging: *json-logging
@@ -265,6 +282,31 @@ services:
         condition: service_started
       clickhouse:
         condition: service_healthy
+
+  # ── Docs (static site) ─────────────────────────────────────────────────────
+  docs:
+    build:
+      context: ../../docs
+      dockerfile: Dockerfile
+    expose:
+      - "80"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    restart: always
+    logging: *json-logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # ── Jaeger (trace UI — bind to localhost or add nginx auth to expose) ─────
   jaeger:
@@ -284,7 +326,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 512M
     restart: always
     logging: *json-logging

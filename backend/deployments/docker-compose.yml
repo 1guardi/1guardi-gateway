@@ -183,6 +183,29 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Docs (VitePress dev server) ──────────────────────────────────────────────
+  docs:
+    profiles: ["backend"]
+    image: node:22-alpine
+    working_dir: /docs
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../../docs:/docs
+      - docs_node_modules:/docs/node_modules
+    environment:
+      - NODE_ENV=development
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    restart: unless-stopped
+
   # ── Jaeger (local dev trace UI) ───────────────────────────────────────────────
   jaeger:
     profiles: ["infra"]
@@ -209,3 +232,4 @@ volumes:
   redis_data:
   jaeger_data:
   clickhouse_data:
+  docs_node_modules:

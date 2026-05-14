@@ -19,11 +19,15 @@ function gatewayUrlPlugin(): Plugin {
   }
 }
 
+// ── Base path: /docs in production, / in development ──────────────────────────
+const base = process.env.DOCS_BASE || '/'
+
 // ── Config ────────────────────────────────────────────────────────────────────
 export default defineConfig({
   title: 'AI Gateway',
   description: 'Secure, observable middleware for agentic AI systems',
   lang: 'en-US',
+  base,
 
   vite: {
     plugins: [gatewayUrlPlugin()],

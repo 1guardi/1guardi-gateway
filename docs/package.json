@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vitepress dev",
-    "build": "vitepress build",
+    "build": "DOCS_BASE=/docs/ vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {

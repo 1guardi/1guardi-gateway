@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useLogin } from '../api/auth'
+import { useOIDCProviders, oidcLoginUrl } from '../api/oidc'
 
 interface LoginProps {
   onLogin: () => void
+  ssoError?: string
 }
 
-export default function Login({ onLogin }: LoginProps) {
+export default function Login({ onLogin, ssoError }: LoginProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
   const login = useLogin(onLogin)
+  const { data: providers = [] } = useOIDCProviders()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,6 +54,12 @@ export default function Login({ onLogin }: LoginProps) {
             <p className="font-mono text-[9px] tracking-widest text-muted-foreground mb-1">ACCESS CONTROL</p>
             <h1 className="text-lg font-semibold text-foreground">Sign in</h1>
           </div>
+
+          {ssoError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="font-mono text-[10px] text-destructive">SSO sign-in failed: {ssoError}</p>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -93,6 +102,32 @@ export default function Login({ onLogin }: LoginProps) {
               {login.isPending ? 'AUTHENTICATING...' : 'SIGN IN'}
             </Button>
           </form>
+
+          {providers.length > 0 && (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-border" />
+                <span className="font-mono text-[9px] tracking-widest text-muted-foreground">OR</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
+              <div className="space-y-2">
+                {providers.map((p) => (
+                  <Button
+                    key={p.name}
+                    type="button"
+                    variant="outline"
+                    className="w-full font-mono text-xs tracking-widest"
+                    onClick={() => {
+                      window.location.href = oidcLoginUrl(p.name)
+                    }}
+                  >
+                    CONTINUE WITH {p.label.toUpperCase()}
+                  </Button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

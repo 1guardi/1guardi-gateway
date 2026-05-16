@@ -9,12 +9,13 @@ import (
 // Tenant represents an LLM consumer or project.
 type Tenant struct {
 	gorm.Model
-	Name        string `gorm:"uniqueIndex;not null"`
-	Description string
-	APIKey      string `gorm:"uniqueIndex;not null"` // Internal key for this tenant to use the gateway
-	Agents      []Agent
-	APIKeys     []APIKey
-	Upstreams   []Upstream
+	Name          string `gorm:"uniqueIndex;not null"`
+	Description   string
+	APIKey        string `gorm:"uniqueIndex;not null"` // Internal key for this tenant to use the gateway
+	WebhookSecret string `gorm:"default:''" json:"-"`  // HMAC-SHA256 signing secret for async task callbacks
+	Agents        []Agent
+	APIKeys       []APIKey
+	Upstreams     []Upstream
 }
 
 // Agent represents a specific AI agent within a tenant.
@@ -57,12 +58,24 @@ type Upstream struct {
 }
 
 // User represents a user who can log in to the gateway.
+// PasswordHash is empty for SSO-only users (provisioned via OIDC/SAML).
 type User struct {
 	gorm.Model
 	Name         string `gorm:"not null;default:''"`
 	Email        string `gorm:"uniqueIndex;not null"`
-	PasswordHash string `gorm:"not null"`
+	PasswordHash string `gorm:"default:''"`
 	IsSuperAdmin bool   `gorm:"default:false"`
+}
+
+// OIDCIdentity links an external IdP subject to a local User.
+// Unique on (Provider, Subject) so the same Google/MS account always maps to one user.
+type OIDCIdentity struct {
+	gorm.Model
+	Provider string `gorm:"uniqueIndex:idx_provider_subject;not null"` // "google" | "microsoft"
+	Subject  string `gorm:"uniqueIndex:idx_provider_subject;not null"` // IdP-issued stable user ID (`sub` claim)
+	UserID   uint   `gorm:"not null;index"`
+	User     User
+	Email    string // snapshot at link time, for audit
 }
 
 // Role represents a collection of permissions.
@@ -108,6 +121,34 @@ type GuardrailRule struct {
 	Enabled   bool   `gorm:"default:true" json:"enabled"`
 }
 
+// AsyncTask tracks a long-running LLM call whose result is delivered via webhook.
+// Client receives 202 + task ID immediately; gateway runs upstream call in
+// background, persists result, then POSTs signed payload to WebhookURL.
+type AsyncTask struct {
+	gorm.Model
+	TaskID         string     `gorm:"uniqueIndex;not null" json:"id"`        // external opaque ID (UUID)
+	TenantID       uint       `gorm:"not null;index" json:"tenant_id"`
+	AgentID        string     `json:"agent_id,omitempty"`
+	ThreadID       string     `json:"thread_id,omitempty"`
+	Endpoint       string     `gorm:"not null" json:"endpoint"`              // "chat.completions" | "messages" | "responses"
+	ModelName      string     `gorm:"not null;column:model" json:"model"`
+	Status         string     `gorm:"not null;default:'pending';index" json:"status"` // pending|running|succeeded|failed
+	WebhookURL     string     `gorm:"not null" json:"webhook_url"`
+	RequestBody    []byte     `gorm:"type:bytea" json:"-"`                   // original client request JSON
+	ResponseBody   []byte     `gorm:"type:bytea" json:"-"`                   // upstream response JSON (when succeeded)
+	ResponseStatus int        `json:"response_status,omitempty"`
+	ErrorMessage   string     `json:"error,omitempty"`
+	InputTokens    int        `json:"input_tokens,omitempty"`
+	OutputTokens   int        `json:"output_tokens,omitempty"`
+	CostUSD        float64    `json:"cost_usd,omitempty"`
+	WebhookAttempts int       `gorm:"default:0" json:"webhook_attempts"`
+	WebhookStatus  string     `gorm:"default:'pending'" json:"webhook_status"` // pending|delivered|dead_letter
+	WebhookLastErr string     `json:"webhook_last_error,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	WebhookDeliveredAt *time.Time `json:"webhook_delivered_at,omitempty"`
+}
+
 // AutoMigrate runs schema migrations for all models.
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -116,9 +157,11 @@ func AutoMigrate(db *gorm.DB) error {
 		&APIKey{},
 		&Upstream{},
 		&User{},
+		&OIDCIdentity{},
 		&Role{},
 		&Permission{},
 		&TenantMember{},
 		&GuardrailRule{},
+		&AsyncTask{},
 	)
 }

@@ -62,6 +62,7 @@ export default defineConfig({
           { text: 'Tenants', link: '/tenants' },
           { text: 'Agents', link: '/agents' },
           { text: 'Members', link: '/members' },
+          { text: 'Single Sign-On (SSO)', link: '/sso' },
         ],
       },
       {

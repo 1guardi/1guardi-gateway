@@ -31,6 +31,21 @@ export function useCreateTenant() {
   })
 }
 
+// useCreateOrganization is the self-service tenant creation used at onboarding
+// (a user belonging to no tenant) and for adding further organizations.
+export function useCreateOrganization() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (req: { name: string; description?: string }) => {
+      const { data } = await apiClient.post<TenantResponse>('/onboarding/tenant', req)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries()
+    },
+  })
+}
+
 export function useDeleteTenant() {
   const queryClient = useQueryClient()
   return useMutation({

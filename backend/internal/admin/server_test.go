@@ -1248,8 +1248,8 @@ func TestHandleDeleteRule_Forbidden(t *testing.T) {
 	database := setupTestDB(t)
 	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
-	database.Create(&db.Tenant{gorm.Model{ID: 1}, "t1", "", "k1", nil, nil, nil})
-	database.Create(&db.Tenant{gorm.Model{ID: 2}, "t2", "", "k2", nil, nil, nil})
+	database.Create(&db.Tenant{Model: gorm.Model{ID: 1}, Name: "t1", APIKey: "k1"})
+	database.Create(&db.Tenant{Model: gorm.Model{ID: 2}, Name: "t2", APIKey: "k2"})
 
 	rule := db.GuardrailRule{TenantID: 2, Name: "r", Action: "block", Scope: "input"}
 	database.Create(&rule)
@@ -1266,8 +1266,8 @@ func TestHandleUpdateRule_Forbidden(t *testing.T) {
 	database := setupTestDB(t)
 	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
 
-	database.Create(&db.Tenant{gorm.Model{ID: 1}, "t1", "", "k1", nil, nil, nil})
-	database.Create(&db.Tenant{gorm.Model{ID: 2}, "t2", "", "k2", nil, nil, nil})
+	database.Create(&db.Tenant{Model: gorm.Model{ID: 1}, Name: "t1", APIKey: "k1"})
+	database.Create(&db.Tenant{Model: gorm.Model{ID: 2}, Name: "t2", APIKey: "k2"})
 
 	rule := db.GuardrailRule{TenantID: 2, Name: "r", Action: "block", Scope: "input"}
 	database.Create(&rule)
@@ -1302,4 +1302,51 @@ func TestHandleCreateRule_WithAgentID(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &created)
 	assert.NotNil(t, created.AgentID)
 	assert.Equal(t, uint(1), *created.AgentID)
+}
+
+// TestHandleSelfServeTenant verifies a user with no tenant can create one and
+// becomes its admin, with a default API key and managed rules seeded.
+func TestHandleSelfServeTenant(t *testing.T) {
+	database := setupTestDB(t)
+	require.NoError(t, db.SeedRBAC(database))
+	require.NoError(t, database.Create(&db.User{Model: gorm.Model{ID: 1}, Name: "Test User", Email: "test-admin@example.com"}).Error)
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
+
+	body := `{"name":"Acme Inc.","description":"test org"}`
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/tenant", bytes.NewBufferString(body)))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	var tenant db.Tenant
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &tenant))
+	assert.Equal(t, "Acme Inc.", tenant.Name)
+	assert.NotZero(t, tenant.ID)
+
+	// Creator must be a tenantAdmin member of the new tenant.
+	var member db.TenantMember
+	require.NoError(t, database.Where("tenant_id = ? AND user_id = ?", tenant.ID, 1).First(&member).Error)
+	var role db.Role
+	require.NoError(t, database.First(&role, member.RoleID).Error)
+	assert.Equal(t, "tenantAdmin", role.Name)
+
+	// Default API key and managed guardrail rules must be seeded.
+	var keyCount, ruleCount int64
+	database.Model(&db.APIKey{}).Where("tenant_id = ?", tenant.ID).Count(&keyCount)
+	database.Model(&db.GuardrailRule{}).Where("tenant_id = ?", tenant.ID).Count(&ruleCount)
+	assert.Equal(t, int64(1), keyCount)
+	assert.Positive(t, ruleCount)
+}
+
+// TestHandleSelfServeTenant_MissingName rejects an org with no name.
+func TestHandleSelfServeTenant_MissingName(t *testing.T) {
+	database := setupTestDB(t)
+	require.NoError(t, db.SeedRBAC(database))
+	router := NewRouter(testCfg(), database, nil, nil, nil, nil, nil)
+
+	req := authRequest(t, httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/tenant", bytes.NewBufferString(`{"description":"x"}`)))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }

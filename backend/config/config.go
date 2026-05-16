@@ -22,6 +22,26 @@ type Config struct {
 	ClickHouse ClickHouseConfig
 	Upstreams  []UpstreamConfig
 	MLRunner   MLRunnerConfig
+	OIDC       OIDCConfig
+}
+
+// OIDCConfig holds OIDC provider settings. A provider is enabled only when
+// both ClientID and ClientSecret are set.
+type OIDCConfig struct {
+	RedirectBaseURL   string // e.g. "http://localhost:8081" — callback = RedirectBaseURL + /api/v1/auth/oidc/{provider}/callback
+	FrontendURL       string // where to bounce the browser after callback w/ token in fragment
+	Google            OIDCProviderConfig
+	Microsoft         OIDCProviderConfig
+	MicrosoftTenantID string // Azure AD tenant ID; "common" allows multi-tenant + personal accounts
+}
+
+type OIDCProviderConfig struct {
+	ClientID     string
+	ClientSecret string
+}
+
+func (p OIDCProviderConfig) Enabled() bool {
+	return p.ClientID != "" && p.ClientSecret != ""
 }
 
 // MLRunnerConfig holds settings for the Python ML inference sidecar.
@@ -106,6 +126,19 @@ func Load() (*Config, error) {
 			Database: env("CLICKHOUSE_DB", "otel"),
 		},
 		Upstreams: loadUpstreams(),
+		OIDC: OIDCConfig{
+			RedirectBaseURL:   env("OIDC_REDIRECT_BASE_URL", "http://localhost:8081"),
+			FrontendURL:       env("OIDC_FRONTEND_URL", "http://localhost:5173"),
+			MicrosoftTenantID: env("OIDC_MICROSOFT_TENANT", "common"),
+			Google: OIDCProviderConfig{
+				ClientID:     os.Getenv("OIDC_GOOGLE_CLIENT_ID"),
+				ClientSecret: os.Getenv("OIDC_GOOGLE_CLIENT_SECRET"),
+			},
+			Microsoft: OIDCProviderConfig{
+				ClientID:     os.Getenv("OIDC_MICROSOFT_CLIENT_ID"),
+				ClientSecret: os.Getenv("OIDC_MICROSOFT_CLIENT_SECRET"),
+			},
+		},
 		MLRunner: MLRunnerConfig{
 			BaseURL:   env("MLRUNNER_BASE_URL", "http://localhost:8082"),
 			Threshold: floatEnv("MLRUNNER_THRESHOLD", 0.85),

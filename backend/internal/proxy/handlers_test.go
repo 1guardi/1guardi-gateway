@@ -178,7 +178,7 @@ func TestHandleChatCompletions_Guardrails(t *testing.T) {
 	database.AutoMigrate(&db.GuardrailRule{}, &db.Tenant{})
 
 	tenantID := uint(1)
-	database.Create(&db.Tenant{gorm.Model{ID: tenantID}, "t1", "", "k1", nil, nil, nil})
+	database.Create(&db.Tenant{Model: gorm.Model{ID: tenantID}, Name: "t1", APIKey: "k1"})
 
 	// Rule to block "badword"
 	database.Create(&db.GuardrailRule{

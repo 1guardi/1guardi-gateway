@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/chaitanyabankanhal/ai-gateway/config"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/auth"
+	"github.com/chaitanyabankanhal/ai-gateway/internal/auth/oidc"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/clickhouse"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/db"
 	"github.com/chaitanyabankanhal/ai-gateway/internal/guardrails"
@@ -50,6 +52,17 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 		ch:         ch,
 	}
 
+	// OIDC service — optional. Discovery happens here at startup so the callback
+	// stays fast. If discovery fails (e.g. offline dev), log and skip; password
+	// login still works.
+	oidcReg, err := oidc.NewRegistry(context.Background(), cfg.OIDC)
+	var oidcSvc *oidc.Service
+	if err != nil {
+		slog.Warn("admin: OIDC registry init failed; SSO disabled", "err", err)
+	} else if len(oidcReg.Enabled()) > 0 {
+		oidcSvc = oidc.NewService(cfg.OIDC, cfg.Admin, oidcReg, oidc.NewRedisStateStore(redis), database)
+	}
+
 	mux := chi.NewRouter()
 
 	mux.Use(middleware.RequestID)
@@ -63,6 +76,11 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 		// Public: login
 		r.Post("/auth/login", srv.handleLogin)
 
+		// Public: OIDC SSO (only mounted if at least one provider is enabled)
+		if oidcSvc != nil {
+			r.Route("/auth/oidc", oidcSvc.Routes)
+		}
+
 		// Protected: everything else
 		r.Group(func(r chi.Router) {
 			r.Use(srv.requireAuth)
@@ -74,6 +92,9 @@ func NewRouter(cfg *config.Config, database *gorm.DB, llmRouter *llmrouter.Route
 
 			r.Get("/tenants", srv.handleListTenants)   // Superadmin only? For now let's leave it open but it should probably filter by user if not superadmin.
 			r.Post("/tenants", srv.handleCreateTenant) // Superadmin only ideally.
+
+			// Self-service: any authenticated user creates a tenant + becomes its admin.
+			r.Post("/onboarding/tenant", srv.handleSelfServeTenant)
 
 			r.Route("/tenants/{tenantID}", func(r chi.Router) {
 				r.With(srv.RequirePermission("tenant.read")).Get("/", srv.handleGetTenant)
@@ -370,20 +391,33 @@ func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, hash, suffix, err := auth.GenerateAPIKey()
+	tenant, err := s.createTenantWithDefaults(req.Name, req.Description)
 	if err != nil {
-		http.Error(w, "failed to generate api key", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(tenant)
+}
+
+// createTenantWithDefaults provisions a tenant together with its default API
+// key and the managed guardrail rule set. Shared by the superadmin create-tenant
+// handler and the self-service onboarding handler.
+func (s *Server) createTenantWithDefaults(name, description string) (*db.Tenant, error) {
+	key, hash, suffix, err := auth.GenerateAPIKey()
+	if err != nil {
+		return nil, fmt.Errorf("generate api key: %w", err)
+	}
+
 	tenant := db.Tenant{
-		Name:        req.Name,
-		Description: req.Description,
+		Name:        name,
+		Description: description,
 		APIKey:      key,
 	}
 	if err := s.db.Create(&tenant).Error; err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 
 	apiKey := db.APIKey{
@@ -395,11 +429,57 @@ func (s *Server) handleCreateTenant(w http.ResponseWriter, r *http.Request) {
 		IsActive: true,
 	}
 	if err := s.db.Create(&apiKey).Error; err != nil {
+		return nil, err
+	}
+
+	s.seedManagedRules(tenant.ID)
+	return &tenant, nil
+}
+
+// handleSelfServeTenant lets any authenticated user create a tenant and become
+// its admin. Used for new-user onboarding (when a user belongs to no tenant)
+// and for creating additional organizations later.
+func (s *Server) handleSelfServeTenant(w http.ResponseWriter, r *http.Request) {
+	claims, _ := r.Context().Value("claims").(*auth.Claims)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	var adminRole db.Role
+	if err := s.db.Where("name = ?", "tenantAdmin").First(&adminRole).Error; err != nil {
+		http.Error(w, "tenantAdmin role not found — RBAC not seeded", http.StatusInternalServerError)
+		return
+	}
+
+	tenant, err := s.createTenantWithDefaults(strings.TrimSpace(req.Name), strings.TrimSpace(req.Description))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	s.seedManagedRules(tenant.ID)
+	member := db.TenantMember{
+		UserID:   claims.UserID,
+		TenantID: tenant.ID,
+		RoleID:   adminRole.ID,
+	}
+	if err := s.db.Create(&member).Error; err != nil {
+		http.Error(w, "failed to grant tenant membership", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

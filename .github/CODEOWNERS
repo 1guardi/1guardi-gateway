@@ -1,0 +1,9 @@
+# Default owners for everything in the repo.
+# These users are requested for review on every PR unless overridden below.
+*                   @chaitanyabankanhal
+
+# Component owners (adjust as the team grows)
+/backend/           @chaitanyabankanhal
+/cli/               @chaitanyabankanhal
+/frontend/          @chaitanyabankanhal
+/docs/              @chaitanyabankanhal

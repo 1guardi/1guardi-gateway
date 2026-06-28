@@ -86,6 +86,14 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-649NB7B/83I=}
       JWT_SECRET: ${JWT_SECRET}
+      # Public app host — used for OIDC callback + post-login redirect.
+      OIDC_REDIRECT_BASE_URL: ${OIDC_REDIRECT_BASE_URL:-https://gateway.theslmcompany.com}
+      OIDC_FRONTEND_URL: ${OIDC_FRONTEND_URL:-https://gateway.theslmcompany.com}
+      OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+      OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
+      OIDC_MICROSOFT_CLIENT_ID: ${OIDC_MICROSOFT_CLIENT_ID:-}
+      OIDC_MICROSOFT_CLIENT_SECRET: ${OIDC_MICROSOFT_CLIENT_SECRET:-}
+      OIDC_MICROSOFT_TENANT: ${OIDC_MICROSOFT_TENANT:-common}
       MLRUNNER_BASE_URL: http://mlrunner:8082
       UPSTREAM_0_KEY_ID: ${UPSTREAM_0_KEY_ID}
       UPSTREAM_0_MODEL: ${UPSTREAM_0_MODEL:-gpt-5.4}

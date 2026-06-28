@@ -6,8 +6,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'landing/**'
-      - '.github/workflows/deploy-landing.yml'
+      - "landing/**"
   workflow_dispatch: # allow manual runs from the Actions tab
 
 permissions:
@@ -37,6 +36,12 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # Stamp a unique marker so the build content always differs from the
+      # current active version — avoids Firebase's FAILED_PRECONDITION dedup
+      # error when source changes don't alter the bundled output.
+      - name: Stamp build version
+        run: echo "${{ github.sha }} ${{ github.run_id }}-${{ github.run_attempt }}" > dist/build-version.txt
 
       - name: Deploy to Firebase Hosting (live)
         uses: FirebaseExtended/action-hosting-deploy@v0
